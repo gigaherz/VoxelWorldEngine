@@ -1,0 +1,7 @@
+*.suo
+*.user
+/VoxelWorldEngine/Content/bin
+/VoxelWorldEngine/Content/obj
+/VoxelWorldEngine/bin
+/VoxelWorldEngine/obj
+_ReSharper.*
