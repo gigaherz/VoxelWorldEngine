@@ -1,6 +1,6 @@
 using System;
 
-namespace VoxelWorldEngine
+namespace VoxelWorldEngine.Util
 {
     public struct Vector3I : IComparable<Vector3I>, IEquatable<Vector3I>
     {
@@ -14,6 +14,8 @@ namespace VoxelWorldEngine
             Y = y;
             Z = z;
         }
+
+        public int SqrMagnitude => X * X + Y * Y + Z * Z;
 
         public int CompareTo(Vector3I other)
         {

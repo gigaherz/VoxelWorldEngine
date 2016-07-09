@@ -17,13 +17,13 @@
 
 using System;
 
-namespace VoxelWorldEngine
+namespace VoxelWorldEngine.Noise
 {
     public class Simplex
     {
-        readonly double offx;
-        readonly double offy;
-        readonly double offz;
+        private readonly double offx;
+        private readonly double offy;
+        private readonly double offz;
 
         public Simplex(int seed)
         {

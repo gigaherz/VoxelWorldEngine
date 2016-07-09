@@ -1,9 +1,12 @@
 using System;
+using System.Linq;
 using System.Diagnostics;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using Microsoft.Xna.Framework.Input;
 using VoxelWorldEngine.Objects;
+using VoxelWorldEngine.Terrain;
+using VoxelWorldEngine.Util;
 
 namespace VoxelWorldEngine
 {
@@ -11,34 +14,39 @@ namespace VoxelWorldEngine
     {
         public static readonly string DefaultDomain = "VoxelWorldEngine";
 
-        GraphicsDeviceManager graphics;
+        private readonly GraphicsDeviceManager _graphics;
 
-        VoxelGrid grid;
+        private SpriteBatch _spriteBatch;
 
-        Effect terrainDrawEffect;
-        Texture terrainTexture;
+        private Grid grid;
 
-        float angleYaw = 0;
-        float anglePitch = 0;
+        public Effect terrainDrawEffect;
+        public Texture terrainTexture;
+        public SpriteFont font;
 
-        Vector3 playerPosition;
-        Vector3 playerSpeed;
+        private float angleYaw = 0;
+        private float anglePitch = 0;
+
+        private Vector3 playerPosition;
+        private Vector3 playerSpeed;
 
         public VoxelGame()
         {
-            graphics = new GraphicsDeviceManager(this)
+            _graphics = new GraphicsDeviceManager(this)
             {
                 PreferredBackBufferWidth = 1920,
                 PreferredBackBufferHeight = 1080,
                 PreferMultiSampling = true,
                 SynchronizeWithVerticalRetrace = false
             };
-            graphics.ApplyChanges();
+            _graphics.ApplyChanges();
             Content.RootDirectory = "Content";
         }
 
         protected override void Initialize()
         {
+            _spriteBatch = new SpriteBatch(GraphicsDevice);
+
             if (Window != null && MouseExtras.IsForeground(Window))
             {
                 Window.AllowUserResizing = true;
@@ -52,7 +60,7 @@ namespace VoxelWorldEngine
             }
 
             // TODO: Add your initialization logic here
-            grid = new VoxelGrid(this);
+            grid = new Grid(this);
 
             Components.Add(grid);
 
@@ -67,6 +75,8 @@ namespace VoxelWorldEngine
             terrainDrawEffect.Parameters["Projection"].SetValue(Matrix.CreatePerspectiveFieldOfView(1.1f, -ar, 0.1f, 10000));
 
             terrainTexture = Content.Load<Texture>("Tiles");
+
+            font = Content.Load<SpriteFont>("Font");
         }
 
         protected override void UnloadContent()
@@ -79,21 +89,50 @@ namespace VoxelWorldEngine
             MouseExtras.ReleaseCapture();
         }
 
+        bool pauseWasPressed;
+        bool pause;
         float targetY = 0;
         protected override void Update(GameTime gameTime)
         {
+            if (Window == null)
+                return;
+
             var elapsed = (float)gameTime.ElapsedGameTime.TotalSeconds;
             var keyboardState = Keyboard.GetState();
 
             if (keyboardState.IsKeyDown(Keys.Escape))
+            {
                 Exit();
+                return;
+            }
 
-            ShowFps();
+            bool pauseIsPressed = keyboardState.IsKeyDown(Keys.Tab);
+            if (!pauseWasPressed && pauseIsPressed)
+            {
+                pause = !pause;
+                if (pause)
+                {
+                    if (MouseExtras.HasCapture(Window))
+                        MouseExtras.ReleaseCapture();
+                }
+                IsMouseVisible = pause;
+            }
+            pauseWasPressed = pauseIsPressed;
+
+            if (!MouseExtras.IsForeground(Window))
+            {
+                IsMouseVisible = true;
+                pause = true;
+                if (MouseExtras.HasCapture(Window))
+                    MouseExtras.ReleaseCapture();
+            }
+
+            ShowFps(gameTime);
 
             var mouseX = 0;
             var mouseY = 0;
 
-            if (Window != null && MouseExtras.IsForeground(Window))
+            if (!pause && MouseExtras.IsForeground(Window) && MouseExtras.HasCapture(Window))
             {
                 var centerX = Window.ClientBounds.Width / 2;
                 var centerY = Window.ClientBounds.Height / 2;
@@ -137,11 +176,11 @@ namespace VoxelWorldEngine
             playerSpeed.Y -= 9.8f * elapsed;
             playerPosition.Y += playerSpeed.Y * elapsed;
 
-            int px = (int)Math.Floor(playerPosition.X / VoxelTile.VoxelSizeX - 0.4f);
-            int py = (int)Math.Floor(playerPosition.Y / VoxelTile.VoxelSizeY + 0.4f);
-            int pz = (int)Math.Floor(playerPosition.Z / VoxelTile.VoxelSizeZ - 0.4f);
-            int qx = (int)Math.Floor(playerPosition.X / VoxelTile.VoxelSizeX + 0.4f);
-            int qz = (int)Math.Floor(playerPosition.Z / VoxelTile.VoxelSizeZ + 0.4f);
+            int px = (int)Math.Floor(playerPosition.X / Tile.VoxelSizeX - 0.4f);
+            int py = (int)Math.Floor(playerPosition.Y / Tile.VoxelSizeY + 0.4f);
+            int pz = (int)Math.Floor(playerPosition.Z / Tile.VoxelSizeZ - 0.4f);
+            int qx = (int)Math.Floor(playerPosition.X / Tile.VoxelSizeX + 0.4f);
+            int qz = (int)Math.Floor(playerPosition.Z / Tile.VoxelSizeZ + 0.4f);
 
             int yy = 0, xx = px, zz = pz;
             int ty;
@@ -163,7 +202,7 @@ namespace VoxelWorldEngine
 
             float blockHeight = block.PhysicsMaterial.IsSolid ? block.PhysicsMaterial.Height : 0;
 
-            targetY = 1.5f + blockHeight + VoxelTile.VoxelSizeY * yy;
+            targetY = 1.5f + blockHeight + Tile.VoxelSizeY * yy;
 
             var approach = elapsed / 0.25f;
 
@@ -191,10 +230,16 @@ namespace VoxelWorldEngine
             playerPosition += cameraForward * move.Z * 10 * elapsed;
 #endif
 
+            grid.UpdatePlayerPosition(playerPosition);
+            PriorityScheduler.Instance.SetPlayerPosition(new Vector3D(
+                playerPosition.X,
+                playerPosition.Y,
+                playerPosition.Z));
+
             terrainDrawEffect.Parameters["View"].SetValue(Matrix.CreateLookAt(playerPosition, playerPosition + cameraForward, Vector3.UnitY));
             terrainDrawEffect.Parameters["World"].SetValue(Matrix.Identity);
 
-            if (Window != null && MouseExtras.IsForeground(Window))
+            if (!pause && MouseExtras.IsForeground(Window))
             {
                 if (!MouseExtras.HasCapture(Window))
                     MouseExtras.SetCapture(Window);
@@ -207,32 +252,36 @@ namespace VoxelWorldEngine
             base.Update(gameTime);
         }
 
-        DateTime lastFpsTime = DateTime.Now;
-        private void ShowFps()
+        TimeSpan _lastFpsTime = TimeSpan.Zero;
+        private void ShowFps(GameTime gameTime)
         {
-            var now = DateTime.Now;
-            var elapsed = (now - lastFpsTime).TotalSeconds;
+            var now = gameTime.TotalGameTime;
+            var elapsed = (now - _lastFpsTime).TotalSeconds;
             if (elapsed >= 1)
             {
-                Debug.WriteLine("FPS: {0}", frames / elapsed);
-                frames = 0;
-                lastFpsTime = now;
+                Window.Title = $"FPS: {_frames / elapsed}";
+                _frames = 0;
+                _lastFpsTime = now;
             }
         }
 
-        int frames = 0;
+        int _frames;
         protected override void Draw(GameTime gameTime)
         {
-            frames++;
+            _frames++;
 
             GraphicsDevice.Clear(Color.CornflowerBlue);
-
-            // TODO: Add your drawing code here
-
-            terrainDrawEffect.Techniques[0].Passes[0].Apply();
-            GraphicsDevice.Textures[0] = terrainTexture;
-
+            
             base.Draw(gameTime);
+
+            _spriteBatch.Begin();
+            if (pause)
+            {
+                _spriteBatch.DrawString(font, "Paused", new Vector2(Window.ClientBounds.Width / 2.0f, Window.ClientBounds.Height / 2.0f), Color.White);
+
+            }
+            _spriteBatch.End();
+
         }
     }
 }

@@ -8,8 +8,7 @@ namespace VoxelWorldEngine.Rendering
 {
     public class Mesh : IDisposable
     {
-        VertexFormats.PosColorTexNormal[] vertices;
-        int[] indices;
+        bool isInitialized;
 
         private VertexBuffer _vbuffer;
         private IndexBuffer _ibuffer;
@@ -18,34 +17,19 @@ namespace VoxelWorldEngine.Rendering
 
         public GraphicsDevice GraphicsDevice { get; set; }
 
-        public Mesh(Game game, RenderQueue queue, VertexFormats.PosColorTexNormal[] vertices, int[] indices)
+        public Mesh(Game game, RenderQueue queue, VertexFormats.PosColorTexNormal[] vertices, int verticesLength, int[] indices, int indicesLength)
         {
             Queue = queue;
 
             GraphicsDevice = game.GraphicsDevice;
 
-            this.vertices = vertices;
-            this.indices = indices;
-        }
-
-        bool isInitialized;
-        public void MakeBuffers()
-        {
-            if(isInitialized)
-                return;
-
-            isInitialized = true;
-
             _vbuffer?.Dispose();
-            _vbuffer = new VertexBuffer(GraphicsDevice, VertexFormats.PosColorTexNormal.VertexDeclaration, vertices.Length,
-                BufferUsage.WriteOnly);
-            _vbuffer.SetData(vertices);
-            vertices = null;
+            _vbuffer = new VertexBuffer(GraphicsDevice, VertexFormats.PosColorTexNormal.VertexDeclaration, verticesLength, BufferUsage.WriteOnly);
+            _vbuffer.SetData(vertices, 0, verticesLength);
 
             _ibuffer?.Dispose();
-            _ibuffer = new IndexBuffer(GraphicsDevice, IndexElementSize.ThirtyTwoBits, indices.Length, BufferUsage.WriteOnly);
-            _ibuffer.SetData(indices);
-            indices = null;
+            _ibuffer = new IndexBuffer(GraphicsDevice, IndexElementSize.ThirtyTwoBits, indicesLength, BufferUsage.WriteOnly);
+            _ibuffer.SetData(indices, 0, indicesLength);
         }
 
         public virtual void Draw(GameTime gameTime)

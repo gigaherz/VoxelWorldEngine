@@ -1,6 +1,7 @@
 ﻿using System;
+using VoxelWorldEngine.Util;
 
-namespace VoxelWorldEngine
+namespace VoxelWorldEngine.Noise
 {
     /* Coherent noise function over 1, 2 or 3 dimensions */
     /* (copyright Ken Perlin) */

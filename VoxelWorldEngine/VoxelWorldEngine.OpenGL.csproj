@@ -57,13 +57,12 @@
     <CodeAnalysisRuleSet>MinimumRecommendedRules.ruleset</CodeAnalysisRuleSet>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Include="MouseExtras.cs" />
+    <Compile Include="Noise\Perlin.cs" />
+    <Compile Include="Noise\Simplex.cs" />
     <Compile Include="Objects\Block.cs" />
     <Compile Include="Objects\PhysicsMaterial.cs" />
     <Compile Include="Objects\RenderingMaterial.cs" />
     <Compile Include="Objects\RenderQueue.cs" />
-    <Compile Include="Perlin.cs" />
-    <Compile Include="PriorityScheduler.cs" />
     <Compile Include="Program.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="Registry\GenericRegistry.cs" />
@@ -73,13 +72,15 @@
     <Compile Include="Rendering\Mesh.cs" />
     <Compile Include="Rendering\MeshBuilder.cs" />
     <Compile Include="Rendering\VertexFormats.cs" />
-    <Compile Include="Simplex.cs" />
-    <Compile Include="Vector2D.cs" />
-    <Compile Include="Vector3D.cs" />
-    <Compile Include="Vector3I.cs" />
+    <Compile Include="Terrain\Grid.cs" />
+    <Compile Include="Terrain\Tile.cs" />
+    <Compile Include="Terrain\TileGraphics.cs" />
+    <Compile Include="Util\MouseExtras.cs" />
+    <Compile Include="Util\PriorityScheduler.cs" />
+    <Compile Include="Util\Vector2D.cs" />
+    <Compile Include="Util\Vector3D.cs" />
+    <Compile Include="Util\Vector3I.cs" />
     <Compile Include="VoxelGame.cs" />
-    <Compile Include="VoxelGrid.cs" />
-    <Compile Include="VoxelTile.cs" />
   </ItemGroup>
   <ItemGroup>
     <Reference Include="MonoGame.Framework, Version=3.5.1.1679, Culture=neutral, processorArchitecture=MSIL">

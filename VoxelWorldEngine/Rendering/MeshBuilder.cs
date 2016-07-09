@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 using System.Security;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
@@ -20,14 +21,24 @@ namespace VoxelWorldEngine.Rendering
             }
             return collector;
         }
+
+        public void Clear()
+        {
+            foreach(var collector in Collectors.Values)
+                collector.Clear();
+        }
     }
 
     class MeshBuilder
     {
-        private readonly List<VertexFormats.PosColorTexNormal> _vertices = new List<VertexFormats.PosColorTexNormal>(10000);
-        private readonly List<int> _indices = new List<int>(10000);
+        private VertexFormats.PosColorTexNormal[] _vertices = new VertexFormats.PosColorTexNormal[10000];
+        private int[] _indices = new int[10000];
+
+        int _vertexCount;
+        int _indexCount;
 
         public RenderQueue Queue { get; }
+        public int IndexCount => _indexCount;
 
         public MeshBuilder(RenderQueue queue)
         {
@@ -36,17 +47,37 @@ namespace VoxelWorldEngine.Rendering
 
         public void Clear()
         {
-            _vertices.Clear();
-            _indices.Clear();
+            _vertexCount = 0;
+            _indexCount = 0;
         }
 
         public Mesh Build(Game game)
         {
-            if (_vertices.Count > 0 && _indices.Count > 0)
+            if (_vertexCount > 0 && _indexCount > 0)
             {
-                return new Mesh(game, Queue, _vertices.ToArray(), _indices.ToArray());
+                return new Mesh(game, Queue, _vertices, _vertexCount, _indices, _indexCount);
             }
             return null;
+        }
+
+        private void AddVertex(VertexFormats.PosColorTexNormal vertex)
+        {
+            if (_vertexCount == _vertices.Length)
+            {
+                Array.Resize(ref _vertices, _vertices.Length + 10000);
+            }
+
+            _vertices[_vertexCount++] = vertex;
+        }
+
+        private void AddIndex(int index)
+        {
+            if (_indexCount == _indices.Length)
+            {
+                Array.Resize(ref _indices, _indices.Length + 10000);
+            }
+
+            _indices[_indexCount++] = index;
         }
 
         public void AddTriangle(
@@ -54,14 +85,14 @@ namespace VoxelWorldEngine.Rendering
             VertexFormats.PosColorTexNormal v1,
             VertexFormats.PosColorTexNormal v2)
         {
-            var i0 = _vertices.Count;
-            _vertices.Add(v0);
-            _vertices.Add(v1);
-            _vertices.Add(v2);
+            var i0 = _vertexCount;
+            AddVertex(v0);
+            AddVertex(v1);
+            AddVertex(v2);
 
-            _indices.Add(i0 + 0);
-            _indices.Add(i0 + 1);
-            _indices.Add(i0 + 2);
+            AddIndex(i0 + 0);
+            AddIndex(i0 + 1);
+            AddIndex(i0 + 2);
         }
 
         public void AddQuad(
@@ -70,18 +101,18 @@ namespace VoxelWorldEngine.Rendering
             VertexFormats.PosColorTexNormal v2,
             VertexFormats.PosColorTexNormal v3)
         {
-            var i0 = _vertices.Count;
-            _vertices.Add(v0);
-            _vertices.Add(v1);
-            _vertices.Add(v2);
-            _vertices.Add(v3);
+            var i0 = _vertexCount;
+            AddVertex(v0);
+            AddVertex(v1);
+            AddVertex(v2);
+            AddVertex(v3);
 
-            _indices.Add(i0 + 0);
-            _indices.Add(i0 + 1);
-            _indices.Add(i0 + 2);
-            _indices.Add(i0 + 0);
-            _indices.Add(i0 + 2);
-            _indices.Add(i0 + 3);
+            AddIndex(i0 + 0);
+            AddIndex(i0 + 1);
+            AddIndex(i0 + 2);
+            AddIndex(i0 + 0);
+            AddIndex(i0 + 2);
+            AddIndex(i0 + 3);
         }
     }
 }
