@@ -1,9 +1,11 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.Runtime.Remoting.Messaging;
+using System.Linq;
 using System.Threading;
 using Microsoft.Xna.Framework;
+using VoxelWorldEngine.Noise;
 using VoxelWorldEngine.Objects;
 using VoxelWorldEngine.Registry;
 using VoxelWorldEngine.Util;
@@ -12,72 +14,166 @@ namespace VoxelWorldEngine.Terrain
 {
     public class Grid : DrawableGameComponent
     {
-        private readonly Dictionary<long, Dictionary<int, Tile>> _tiles = new Dictionary<long, Dictionary<int, Tile>>();
-        private readonly List<Tile> _unorderedTiles = new List<Tile>();
+        public static int MaxTilesInProgress = PriorityScheduler.Instance.MaximumConcurrencyLevel * 2;
+        public static int LoadRange = 32;
+        public static int UnloadRange = 32;
+
+        private readonly OcTree<Tile> _tiles = new OcTree<Tile>();
+
         private readonly Queue<Tile> _pendingTiles = new Queue<Tile>();
 
-        public List<Tile> UnorderedTiles => _unorderedTiles;
+        private readonly ReaderWriterLockSlim _tilesLock = new ReaderWriterLockSlim();
+        public HashSet<Tile> UnorderedTiles { get; } = new HashSet<Tile>();
+
+        public int PendingTiles => _pendingTiles.Count;
 
         public int Seed { get; } = (int)DateTime.UtcNow.Ticks;
         public int TilesInProgress { get; set; }
 
+        public Vector3I SpawnPosition { get; set; }
+
+        public Simplex PerlinDensity { get; }
+        public Simplex PerlinHeight { get; }
+        public Simplex PerlinRoughness { get; }
+        public Random Random { get; }
+
         public Grid(Game game)
             : base(game)
         {
-            var l = new List<Vector3I>();
-            int range = 32;
-            for (int z = -range; z <= range; z++)
-            {
-                for (int x = -range; x <= range; x++)
-                {
-                    for (int y = 0; y < 256/Tile.SizeY; y++)
-                    {
-                        if (Math.Sqrt(x * x + z * z) <= range)
-                            l.Add(new Vector3I(x,y,z));
-                    }
-                }
-            }
-
-            l.Sort((a,b) => Math.Sign(a.SqrMagnitude - b.SqrMagnitude));
-            foreach (var vec in l)
-            {
-                int x = vec.X;
-                int y = vec.Y;
-                int z = vec.Z;
-                var tile = new Tile(this, x, y, z);
-
-                SetTile(x, y, z, tile);
-                _unorderedTiles.Add(tile);
-                _pendingTiles.Enqueue(tile);
-            }
+            PerlinDensity = new Simplex(Seed);
+            PerlinHeight = new Simplex(Seed * 3);
+            PerlinRoughness = new Simplex(Seed * 5);
+            Random = new Random(Seed);
         }
 
+        Vector3D _lastPlayerPosition;
+
+        int before = Environment.TickCount;
+
+        bool bootstrap = true;
+        public void SetPlayerPosition(Vector3D newPosition)
+        {
+            var difference = newPosition - _lastPlayerPosition;
+            var distance = difference.Magnitude;
+
+            int tx = (int)Math.Floor(newPosition.X / Tile.SizeXZ);
+            int ty = (int)Math.Floor(newPosition.Y / Tile.SizeY);
+            int tz = (int)Math.Floor(newPosition.Z / Tile.SizeXZ);
+            var tp = new Vector3I(tx,ty,tz);
+            if (!ChunkExists(newPosition))
+            {
+                bootstrap = true;
+            }
+
+            if ((distance > 5 && (Environment.TickCount - before) > 1000) || bootstrap)
+            {
+                before = Environment.TickCount; 
+
+                bootstrap = false;
+
+                List<Tile> ul = _pendingTiles.ToList();
+                _pendingTiles.Clear();
+
+                _tilesLock.EnterReadLock();
+                try
+                {
+                    ul.AddRange(UnorderedTiles.Where(tile => (tile.Centroid - newPosition).Magnitude > UnloadRange * Tile.SizeXZ));
+                }
+                finally
+                {
+                    _tilesLock.ExitReadLock();
+                }
+
+                foreach (var tile in ul)
+                {
+                    SetTile(tile.IndexX, tile.IndexY, tile.IndexZ, null);
+                }
+
+                var l = new List<Vector3I>();
+                var fOffY = Tile.Floor / Tile.SizeY - tp.Y;
+                var cOffY = Tile.Ceiling / Tile.SizeY - tp.Y;
+                for (int r = 0; r < LoadRange; r++)
+                {
+                    for (int z = -r; z <= r; z++)
+                    {
+                        for (int x = -r; x <= r; x++)
+                        {
+                            for (int y = Math.Max(fOffY, -r * Tile.SizeY / Tile.SizeXZ); y < Math.Min(cOffY, r * Tile.SizeY / Tile.SizeXZ); y++)
+                            {
+                                if (Math.Sqrt(x * x + y * y + z * z) <= LoadRange)
+                                {
+                                    Tile t;
+                                    if (!Find(tp.X + x, tp.Y + y, tp.Z + z, out t))
+                                        l.Add(new Vector3I(tp.X + x, tp.Y + y, tp.Z + z));
+                                }
+                            }
+                        }
+                    }
+                    if (l.Count > MaxTilesInProgress)
+                        break;
+                }
+
+                var cen = new Vector3D(Tile.SizeXZ / 2.0f, Tile.SizeY / 2.0f, Tile.SizeXZ / 2.0f);
+                var size = new Vector3D(Tile.SizeXZ, Tile.SizeY, Tile.SizeXZ);
+                Func<Vector3I,double> valueFunc = a => (a * size + cen - newPosition).SqrMagnitude;
+                l.Sort((a, b) => Math.Sign(valueFunc(a) - valueFunc(b)));
+                for (int i = 0; i < l.Count && TilesInProgress < MaxTilesInProgress; i++)
+                {
+                    var vec = l[i];
+                    int x = vec.X;
+                    int y = vec.Y;
+                    int z = vec.Z;
+                    var tile = new Tile(this, x, y, z);
+
+                    Tile tile2;
+                    if (!Find(x, y, z, out tile2))
+                    {
+                        SetTile(x, y, z, tile);
+                        //ForceTile(tile);
+                        _pendingTiles.Enqueue(tile);
+                    }
+                }
+                _lastPlayerPosition = newPosition;
+            }
+        }
+        
         private void SetTile(int x, int y, int z, Tile tile)
         {
-            long xz = ((long)x<<32) ^ z;
-
-            Dictionary<int, Tile> yy;
-            if (!_tiles.TryGetValue(xz, out yy))
+            var previous = _tiles.SetValue(x, y, z, tile);
+            if (previous != tile)
             {
-                yy = new Dictionary<int, Tile>();
-                _tiles.Add(xz, yy);
+                _tilesLock.EnterWriteLock();
+                try
+                {
+                    if (previous != null)
+                        UnorderedTiles.Remove(previous);
+                    if (tile != null)
+                        UnorderedTiles.Add(tile);
+                }
+                finally
+                {
+                    _tilesLock.ExitWriteLock();
+                }
             }
-            
-            yy[y] = tile;
         }
 
         public bool Find(int x, int y, int z, out Tile tile)
         {
-            long xz = ((long)x<<32) ^ z;
+            return _tiles.TryGetValue(x, y, z, out tile);
+        }
 
-            Dictionary<int, Tile> yy;
-            if (!_tiles.TryGetValue(xz, out yy))
-            {
-                tile = null;
+        public bool Require(int x, int y, int z, out Tile tile)
+        {
+            tile = null;
+            if (y < (Tile.Floor / Tile.SizeY) || y >= (Tile.Ceiling / Tile.SizeY))
                 return false;
+            if (!Find(x, y, z, out tile))
+            {
+                tile = new Tile(this, x, y, z);
+                SetTile(x, y, z, tile);
             }
-            
-            return yy.TryGetValue(y, out tile);
+            ForceTile(tile);
+            return true;
         }
 
         Tile lastQueried;
@@ -158,17 +254,123 @@ namespace VoxelWorldEngine.Terrain
             }
             else
             {
-                while (y > 0 && !GetBlock(x, y, z).PhysicsMaterial.IsSolid)
+                while (y > Tile.Floor && !GetBlock(x, y, z).PhysicsMaterial.IsSolid)
                     y--;
             }
             return y;
         }
 
-        public void ForceTile(Tile tile)
+        internal double GetDensityAt(int px, int py, int pz)
         {
-            tile.Initialize();
+            var nx = (px + 0.5) / 128;
+            var ny = (py + 0.5) / 256;
+            var nz = (pz + 0.5) / 128;
 
-            TilesInProgress++;
+            var hx = nx / 2;
+            var hz = nz / 2;
+
+            var rx = nx / 3;
+            var rz = nz / 3;
+
+            var ph = PerlinHeight.Noise(hx, hz, 2);
+            var heightChange = ExpectedHeight(ph);
+
+            var rh = PerlinRoughness.Noise(rx, rz, 2);
+            var roughness = ExpectedHeight(rh, 0.45, 3);
+
+            var baseHeight = Tile.Average + Tile.Range * 0.15 * heightChange;
+
+            var bottom = baseHeight - Tile.Range;
+            var top = baseHeight + Tile.Range;
+
+            var baseDensity = 0.5 - Math.Max(0, Math.Min(1, (py - bottom) / (top - bottom)));
+
+            var noise = heightChange > 0.5 ?
+                PerlinDensity.Noise(nx, ny, nz, 5, 1.7) :
+                PerlinDensity.Noise(nx, ny, nz, 4);
+
+            return 0.1f * roughness * noise + baseDensity;
+        }
+
+        private double ExpectedHeight(double initial)
+        {//1.3*x^5 - 0.55*x^3 + 0.15*x
+            double powered3 = Math.Pow(initial, 3);
+            double powered5 = Math.Pow(initial, 5);
+            double powered = 1.3 * powered5 - 0.55 * powered3 + 0.15 * initial;
+            return powered;
+        }
+
+        private double ExpectedHeight(double initial, double factor, int power)
+        {//1.3*x^5 - 0.55*x^3 + 0.15*x
+            double powered = Math.Pow(initial, power);
+            return initial + factor * (powered - initial);
+        }
+
+        internal void FindSpawnPosition()
+        {
+            int x = 0;
+            int y = 0;
+            int z = 0;
+            int range = 100;
+
+            do
+            {
+                var a = Random.NextDouble() * Math.PI * 2;
+                x = (int)(range * Math.Cos(a));
+                z = (int)(range * Math.Sin(a));
+                y = Tile.WaterLevel;
+
+                if (GetDensityAt(x, y, z) < 0)
+                {
+                    range += 5;
+                    // try again
+                    continue;
+                }
+
+                while (y < Tile.Ceiling)
+                {
+                    if (GetDensityAt(x, y++, z) >= 0)
+                    {
+                        continue;
+                    }
+                    if (GetDensityAt(x, y++, z) >= 0)
+                    {
+                        continue;
+                    }
+                    if (GetDensityAt(x, y++, z) >= 0)
+                    {
+                        continue;
+                    }
+                    if (GetDensityAt(x, y++, z) < 0)
+                        break;
+                }
+
+                if (y < Tile.Ceiling)
+                    break;
+
+                range += 5;
+                // try again
+
+            } while (true);
+
+            SpawnPosition = new Vector3I(x,y-4,z);
+        }
+
+        private void ForceTile(Tile tile)
+        {
+            if (!tile.Initialized)
+                tile.Initialize();
+        }
+
+        public override void Initialize()
+        {
+            base.Initialize();
+
+            PerlinDensity.Initialize();
+            PerlinHeight.Initialize();
+            PerlinRoughness.Initialize();
+
+            FindSpawnPosition();
         }
 
         public override void Update(GameTime gameTime)
@@ -180,7 +382,18 @@ namespace VoxelWorldEngine.Terrain
                 ForceTile(tile);
             }
 
-            foreach (var tile in _unorderedTiles)
+            List<Tile> tileList;
+            _tilesLock.EnterReadLock();
+            try
+            {
+                tileList = UnorderedTiles.ToList();
+            }
+            finally
+            {
+                _tilesLock.ExitReadLock();
+            }
+
+            foreach (var tile in tileList)
             {
                 tile.Update(gameTime);
             }
@@ -201,9 +414,18 @@ namespace VoxelWorldEngine.Terrain
                     GraphicsDevice.BlendState = queue.BlendState;
                     GraphicsDevice.RasterizerState = queue.RasterizerState;
                     GraphicsDevice.DepthStencilState = queue.DepthStencilState;
-                    foreach (var tile in _unorderedTiles)
+
+                    _tilesLock.EnterReadLock();
+                    try
                     {
-                        tile.Graphics.Draw(gameTime, queue);
+                        foreach (var tile in UnorderedTiles)
+                        {
+                            tile.Graphics.Draw(gameTime, queue);
+                        }
+                    }
+                    finally
+                    {
+                        _tilesLock.ExitReadLock();
                     }
                 }
 
@@ -212,8 +434,19 @@ namespace VoxelWorldEngine.Terrain
             base.Draw(gameTime);
         }
 
-        public void UpdatePlayerPosition(Vector3 playerPosition)
+        public bool ChunkExists(Vector3D playerPosition)
         {
+            int px = (int)Math.Floor(playerPosition.X / Tile.SizeXZ);
+            int py = (int)Math.Floor(playerPosition.Y / Tile.SizeY);
+            int pz = (int)Math.Floor(playerPosition.Z / Tile.SizeXZ);
+
+            Tile tile;
+            return Find(px, py, pz, out tile);
+        }
+
+        public void QueueTile(Tile tile)
+        {
+            _pendingTiles.Enqueue(tile);
         }
     }
 }

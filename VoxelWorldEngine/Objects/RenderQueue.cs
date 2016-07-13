@@ -5,6 +5,12 @@ namespace VoxelWorldEngine.Objects
 {
     public class RenderQueue : RegistrableObject<RenderQueue>
     {
+        public static bool Touched { get; private set; }
+        public static void Touch()
+        {
+            Touched = true;
+        }
+
         public static readonly RenderQueue
             None = new RenderQueue("none"),
             Opaque = new RenderQueue("opaque"),

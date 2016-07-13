@@ -1,6 +1,7 @@
 using System;
 using System.Linq;
 using System.Diagnostics;
+using System.Threading;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using Microsoft.Xna.Framework.Input;
@@ -27,11 +28,20 @@ namespace VoxelWorldEngine
         private float angleYaw = 0;
         private float anglePitch = 0;
 
-        private Vector3 playerPosition;
-        private Vector3 playerSpeed;
+        private Vector3D playerPosition;
+        private Vector3D playerSpeed;
+
+        public bool Walking = true;
+
+        public static Thread GameThread { get; } = Thread.CurrentThread;
 
         public VoxelGame()
         {
+            Block.Touch();
+            PhysicsMaterial.Touch();
+            RenderingMaterial.Touch();
+            RenderQueue.Touch();
+
             _graphics = new GraphicsDeviceManager(this)
             {
                 PreferredBackBufferWidth = 1920,
@@ -65,6 +75,8 @@ namespace VoxelWorldEngine
             Components.Add(grid);
 
             base.Initialize();
+
+            playerPosition = grid.SpawnPosition * new Vector3D(Tile.VoxelSizeX, Tile.VoxelSizeY, Tile.VoxelSizeZ);
         }
 
         protected override void LoadContent()
@@ -72,7 +84,7 @@ namespace VoxelWorldEngine
             float ar = GraphicsDevice.Viewport.Width / (float)GraphicsDevice.Viewport.Height;
 
             terrainDrawEffect = Content.Load<Effect>("BasicTextured");
-            terrainDrawEffect.Parameters["Projection"].SetValue(Matrix.CreatePerspectiveFieldOfView(1.1f, -ar, 0.1f, 10000));
+            terrainDrawEffect.Parameters["Projection"].SetValue(Matrix.CreatePerspectiveFieldOfView((float)Math.PI * 0.4f, -ar, 0.1f, 10000));
 
             terrainTexture = Content.Load<Texture>("Tiles");
 
@@ -92,6 +104,7 @@ namespace VoxelWorldEngine
         bool pauseWasPressed;
         bool pause;
         float targetY = 0;
+        bool walkingWasPressed;
         protected override void Update(GameTime gameTime)
         {
             if (Window == null)
@@ -118,6 +131,13 @@ namespace VoxelWorldEngine
                 IsMouseVisible = pause;
             }
             pauseWasPressed = pauseIsPressed;
+
+            var walkingIsPressed = Mouse.GetState().MiddleButton == ButtonState.Released;
+            if (walkingIsPressed && !walkingWasPressed)
+            {
+                Walking = !Walking;
+            }
+            walkingWasPressed = walkingIsPressed;
 
             if (!MouseExtras.IsForeground(Window))
             {
@@ -148,12 +168,12 @@ namespace VoxelWorldEngine
             if (anglePitch > 1.57f) anglePitch = 1.57f;
             if (anglePitch < -1.57f) anglePitch = -1.57f;
 
-            var cYaw = (float)Math.Cos(angleYaw);
-            var sYaw = (float)Math.Sin(angleYaw);
-            var cPitch = (float)Math.Cos(anglePitch);
-            var sPitch = (float)Math.Sin(anglePitch);
+            var cYaw = Math.Cos(angleYaw);
+            var sYaw = Math.Sin(angleYaw);
+            var cPitch = Math.Cos(anglePitch);
+            var sPitch = Math.Sin(anglePitch);
 
-            var cameraForward = new Vector3(sYaw * cPitch, -sPitch, cYaw * cPitch);
+            var cameraForward = new Vector3D(sYaw * cPitch, -sPitch, cYaw * cPitch);
 
             Vector3 move = Vector3.Zero;
 
@@ -162,81 +182,96 @@ namespace VoxelWorldEngine
             if (keyboardState.IsKeyDown(Keys.S)) move.Z -= 1;
             if (keyboardState.IsKeyDown(Keys.W)) move.Z += 1;
 
-#if true
-            if (move.LengthSquared() > 0)
+            if (Walking)
             {
-                move.Normalize();
-
-                playerPosition += new Vector3(
-                    move.Z * sYaw + move.X * cYaw, 0,
-                    move.Z * cYaw - move.X * sYaw) * elapsed * 4;
-            }
-
-            // Gravity
-            playerSpeed.Y -= 9.8f * elapsed;
-            playerPosition.Y += playerSpeed.Y * elapsed;
-
-            int px = (int)Math.Floor(playerPosition.X / Tile.VoxelSizeX - 0.4f);
-            int py = (int)Math.Floor(playerPosition.Y / Tile.VoxelSizeY + 0.4f);
-            int pz = (int)Math.Floor(playerPosition.Z / Tile.VoxelSizeZ - 0.4f);
-            int qx = (int)Math.Floor(playerPosition.X / Tile.VoxelSizeX + 0.4f);
-            int qz = (int)Math.Floor(playerPosition.Z / Tile.VoxelSizeZ + 0.4f);
-
-            int yy = 0, xx = px, zz = pz;
-            int ty;
-
-            for (int rz = pz; rz <= qz; rz++)
-            {
-                for (int rx = px; rx <= qx; rx++)
+                if (grid.ChunkExists(playerPosition))
                 {
-                    if ((ty = grid.FindGround(rx, py, rz)) > yy)
+                    if (move.LengthSquared() > 0)
                     {
-                        yy = ty;
-                        xx = rx;
-                        zz = rz;
+                        move.Normalize();
+
+                        playerPosition += new Vector3D(
+                            move.Z * sYaw + move.X * cYaw, 0,
+                            move.Z * cYaw - move.X * sYaw) * elapsed * 4;
                     }
+
+                    // Gravity
+                    playerSpeed.Y -= 9.8f * elapsed;
+                    playerPosition.Y += playerSpeed.Y * elapsed;
+
+                    int px = (int)Math.Floor(playerPosition.X / Tile.VoxelSizeX - 0.4f);
+                    int py = (int)Math.Floor(playerPosition.Y / Tile.VoxelSizeY + 0.4f);
+                    int pz = (int)Math.Floor(playerPosition.Z / Tile.VoxelSizeZ - 0.4f);
+                    int qx = (int)Math.Floor(playerPosition.X / Tile.VoxelSizeX + 0.4f);
+                    int qz = (int)Math.Floor(playerPosition.Z / Tile.VoxelSizeZ + 0.4f);
+
+                    int yy = Tile.Floor - 1, xx = px, zz = pz;
+                    int ty;
+
+                    for (int rz = pz; rz <= qz; rz++)
+                    {
+                        for (int rx = px; rx <= qx; rx++)
+                        {
+                            if ((ty = grid.FindGround(rx, py, rz)) > yy)
+                            {
+                                yy = ty;
+                                xx = rx;
+                                zz = rz;
+                            }
+                        }
+                    }
+
+                    Block block = grid.GetBlock(xx, yy, zz);
+
+                    float blockHeight = block.PhysicsMaterial.IsSolid ? block.PhysicsMaterial.Height : 0;
+
+                    targetY = 1.5f + Tile.VoxelSizeY * (blockHeight + yy);
+
+                    var approach = elapsed / 0.25f;
+
+                    var distance = playerPosition.Y - targetY;
+
+                    if (distance < 0)
+                    {
+                        playerSpeed.Y = 0;
+                        if (keyboardState.IsKeyDown(Keys.Space))
+                        {
+                            playerPosition.Y = targetY;
+                            playerSpeed.Y = 8;
+                        }
+                    }
+
+                    if (distance < -1)
+                        playerPosition.Y = targetY;
+                    else if (distance > approach)
+                        playerPosition.Y -= approach;
+                    else if (distance < -approach)
+                        playerPosition.Y += approach;
+                    else
+                        playerPosition.Y = targetY;
                 }
             }
-
-            Block block = grid.GetBlock(xx, yy, zz);
-
-            float blockHeight = block.PhysicsMaterial.IsSolid ? block.PhysicsMaterial.Height : 0;
-
-            targetY = 1.5f + blockHeight + Tile.VoxelSizeY * yy;
-
-            var approach = elapsed / 0.25f;
-
-            var distance = playerPosition.Y - targetY;
-
-            if (distance < 0)
-            {
-                playerSpeed.Y = 0;
-                if (keyboardState.IsKeyDown(Keys.Space))
-                {
-                    playerPosition.Y = targetY;
-                    playerSpeed.Y = 8;
-                }
-            }
-
-            if (distance < -1)
-                playerPosition.Y = targetY;
-            else if (distance > approach)
-                playerPosition.Y -= approach;
-            else if (distance < -approach)
-                playerPosition.Y += approach;
             else
-                playerPosition.Y = targetY;
-#else
-            playerPosition += cameraForward * move.Z * 10 * elapsed;
-#endif
+            {
+                if (move.LengthSquared() > 0)
+                {
+                    move.Normalize();
 
-            grid.UpdatePlayerPosition(playerPosition);
-            PriorityScheduler.Instance.SetPlayerPosition(new Vector3D(
-                playerPosition.X,
-                playerPosition.Y,
-                playerPosition.Z));
+                    playerPosition += new Vector3D(
+                        move.X * cYaw, 0,
+                        -move.X * sYaw) * elapsed * 10;
+                }
 
-            terrainDrawEffect.Parameters["View"].SetValue(Matrix.CreateLookAt(playerPosition, playerPosition + cameraForward, Vector3.UnitY));
+                playerPosition += cameraForward * move.Z * 10 * elapsed;
+                playerSpeed = Vector3D.Zero;
+            }
+
+            grid.SetPlayerPosition(playerPosition);
+            PriorityScheduler.Instance.SetPlayerPosition(playerPosition);
+
+            terrainDrawEffect.Parameters["View"].SetValue(Matrix.CreateLookAt(
+                (Vector3)playerPosition,
+                (Vector3)(playerPosition + cameraForward), Vector3.UnitY));
             terrainDrawEffect.Parameters["World"].SetValue(Matrix.Identity);
 
             if (!pause && MouseExtras.IsForeground(Window))
@@ -259,7 +294,7 @@ namespace VoxelWorldEngine
             var elapsed = (now - _lastFpsTime).TotalSeconds;
             if (elapsed >= 1)
             {
-                Window.Title = $"FPS: {_frames / elapsed}";
+                Window.Title = $"FPS: {_frames / elapsed}; Tiles in progress: {grid.TilesInProgress}; Pending tiles: {grid.PendingTiles}; Queued tasks: {PriorityScheduler.Instance.QueuedTaskCount}; Player At: {playerPosition}";
                 _frames = 0;
                 _lastFpsTime = now;
             }

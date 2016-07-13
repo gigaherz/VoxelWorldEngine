@@ -9,21 +9,24 @@ namespace VoxelWorldEngine.Util
     {
         public static PriorityScheduler Instance = new PriorityScheduler();
 
-        private readonly List<PhasedTask> _tasks = new List<PhasedTask>();
+        private readonly List<PositionedTask> _tasks = new List<PositionedTask>();
         private readonly Semaphore _awaitTasks = new Semaphore(0, 1);
         private readonly Mutex _lockTasks = new Mutex();
 
         private Thread[] _threads;
         public int MaximumConcurrencyLevel { get; set; } = Math.Max(1, Environment.ProcessorCount - 1);
+        public int QueuedTaskCount => _tasks.Count;
 
         Vector3D _lastPlayerPosition;
+
+        int before = Environment.TickCount;
 
         public void SetPlayerPosition(Vector3D newPosition)
         {
             var difference = newPosition - _lastPlayerPosition;
             var distance = difference.SqrMagnitude;
 
-            if (distance > 5)
+            if (distance > 5 && (Environment.TickCount - before) > 1000)
             {
                 if (_lockTasks.WaitOne())
                 {
@@ -32,14 +35,15 @@ namespace VoxelWorldEngine.Util
                     _lockTasks.ReleaseMutex();
                 }
                 _lastPlayerPosition = newPosition;
+                before = Environment.TickCount;
             }
         }
 
-        private IEnumerable<PhasedTask> GetNextTask()
+        private IEnumerable<PositionedTask> GetNextTask()
         {
             while (true)
             {
-                PhasedTask task = null;
+                PositionedTask task = null;
                 try
                 {
                     if (_lockTasks.WaitOne())
@@ -76,7 +80,7 @@ namespace VoxelWorldEngine.Util
             }
         }
 
-        protected void QueueTask(PhasedTask task)
+        protected void QueueTask(PositionedTask task)
         {
             var pos = _lastPlayerPosition;
 
@@ -158,7 +162,7 @@ namespace VoxelWorldEngine.Util
         }
 
         int cnt = 0;
-        private void TryExecuteTask(PhasedTask task)
+        private void TryExecuteTask(PositionedTask task)
         {
             try
             {
@@ -172,27 +176,25 @@ namespace VoxelWorldEngine.Util
             }
         }
 
-        public static PhasedTask StartNew(Action action, Vector3D position, int phase)
+        public static PositionedTask StartNew(Action action, Vector3D position)
         {
-            var t = new PhasedTask(action, position, phase);
+            var t = new PositionedTask(action, position);
             Instance.QueueTask(t);
             return t;
         }
 
-        public class PhasedTask
+        public class PositionedTask
         {
-            public int Phase { get; set; }
             public Vector3D Position { get; set; }
 
             public Action Action { get; }
 
-            public PhasedTask Continuation { get; set; }
+            public PositionedTask Continuation { get; set; }
 
-            public PhasedTask(Action action, Vector3D position, int phase)
+            public PositionedTask(Action action, Vector3D position)
             {
                 Action = action;
                 Position = position;
-                Phase = phase;
             }
 
             public void Run()
@@ -203,16 +205,16 @@ namespace VoxelWorldEngine.Util
             int lastScore = -1;
             public int Score(Vector3D vector3D)
             {
-                lastScore = (int)Math.Round(((vector3D - Position) * new Vector3D(1,0.25,1)).Magnitude) + Phase * 10;
+                lastScore = (int)Math.Round(((vector3D - Position) * new Vector3D(1,0.25,1)).Magnitude);
                 return lastScore;
             }
 
-            public PhasedTask ContinueWith(Action<PhasedTask> action)
+            public PositionedTask ContinueWith(Action<PositionedTask> action)
             {
-                Continuation = new PhasedTask(() =>
+                Continuation = new PositionedTask(() =>
                 {
                     action(this);
-                }, Position, Phase);
+                }, Position);
                 return Continuation;
             }
 

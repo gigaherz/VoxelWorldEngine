@@ -49,6 +49,8 @@ namespace VoxelWorldEngine.Noise
             return sum;
         }
 
+        static double min = double.MaxValue;
+        static double max = double.MinValue;
         public double Noise(double x, double y, double z, int n, double alpha = 2, double beta = 2)
         {
             double sum = 0;
@@ -63,6 +65,8 @@ namespace VoxelWorldEngine.Noise
                 y *= beta;
                 z *= beta;
             }
+            min = Math.Min(min, sum);
+            max = Math.Max(max, sum);
             return sum;
         }
 

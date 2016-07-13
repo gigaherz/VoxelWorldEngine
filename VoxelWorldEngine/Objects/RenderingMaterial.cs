@@ -5,6 +5,12 @@ namespace VoxelWorldEngine.Objects
 {
     public class RenderingMaterial : RegistrableObject<RenderingMaterial>
     {
+        public static bool Touched { get; private set; }
+        public static void Touch()
+        {
+            Touched = true;
+        }
+
         public static readonly RenderingMaterial
             Air = new RenderingMaterial("air")
             {

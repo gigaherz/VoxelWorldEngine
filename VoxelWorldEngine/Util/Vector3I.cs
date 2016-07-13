@@ -1,4 +1,5 @@
 using System;
+using Microsoft.Xna.Framework;
 
 namespace VoxelWorldEngine.Util
 {
@@ -43,6 +44,20 @@ namespace VoxelWorldEngine.Util
         public override int GetHashCode()
         {
             return X * 65537 + Z * 257 + Y;
+        }
+
+        public override string ToString()
+        {
+            return $"({X},{Y},{Z})";
+        }
+
+        public static implicit operator Vector3(Vector3I vec)
+        {
+            return new Vector3(
+                vec.X,
+                vec.Y,
+                vec.Z
+                );
         }
     }
 }

@@ -5,6 +5,12 @@ namespace VoxelWorldEngine.Objects
 {
     public class Block : RegistrableObject<Block>
     {
+        public static bool Touched { get; private set; }
+        public static void Touch()
+        {
+            Touched = true;
+        }
+
         // Empty/gas blocks
         public static readonly Block
             Air = new Block("air") { PhysicsMaterial = PhysicsMaterial.Air },

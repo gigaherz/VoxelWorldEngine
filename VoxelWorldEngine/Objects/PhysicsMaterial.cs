@@ -4,6 +4,12 @@ namespace VoxelWorldEngine.Objects
 {
     public class PhysicsMaterial : RegistrableObject<PhysicsMaterial>
     {
+        public static bool Touched { get; private set; }
+        public static void Touch()
+        {
+            Touched = true;
+        }
+
         public static readonly PhysicsMaterial
             Air = new PhysicsMaterial("air") { IsSolid = false },
             Liquid = new PhysicsMaterial("liquid") { IsSolid = false, Height = 7 / 8f },

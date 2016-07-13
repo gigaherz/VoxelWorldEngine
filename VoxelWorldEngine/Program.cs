@@ -13,7 +13,7 @@ namespace VoxelWorldEngine
         {
             using (VoxelGame game = new VoxelGame())
             {
-#if WINDOWS
+#if false//WINDOWS
                 int coreCount = 0;
                 foreach (var item in new System.Management.ManagementObjectSearcher("Select * from Win32_Processor").Get())
                 {
