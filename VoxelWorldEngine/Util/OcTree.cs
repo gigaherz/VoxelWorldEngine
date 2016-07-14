@@ -6,9 +6,9 @@ using System.Threading;
 
 namespace VoxelWorldEngine.Util
 {
-    class OcTree<TValue>
+    public class OcTree<TValue>
     {
-        class OcNode
+        private class OcNode
         {
             readonly object[] values = new object[8];
 
@@ -32,7 +32,7 @@ namespace VoxelWorldEngine.Util
             }
         }
 
-        class OcSingle
+        private class OcSingle
         {
             public int x;
             public int y;
@@ -54,7 +54,7 @@ namespace VoxelWorldEngine.Util
         }
 
         private OcNode _root;
-        private ReaderWriterLockSlim _lock = new ReaderWriterLockSlim();
+        private readonly ReaderWriterLockSlim _lock = new ReaderWriterLockSlim();
 
         public TValue this[int x, int y, int z]
         {

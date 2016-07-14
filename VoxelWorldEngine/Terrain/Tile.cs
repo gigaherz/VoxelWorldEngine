@@ -17,26 +17,7 @@ namespace VoxelWorldEngine.Terrain
 
         // Tile properties
         public const int SizeXZ = 16;
-        public const int SizeY = 64;
-
-        // Basic Terrain configuration
-        public const int HeightAmplitude = 1024;
-        public const int VerticalChunkCount = 1 + HeightAmplitude/SizeY;
-        public const int FlatlandsHeightOffset = 0;
-        public const int WaterLevel = 0;
-
-        // Computed values for terrain configuration
-        public const int Floor = -VerticalChunkCount * SizeY / 2;
-        public const int Ceiling = VerticalChunkCount * SizeY / 2;
-        public const int DepthLevel = FlatlandsHeightOffset + WaterLevel - HeightAmplitude;
-        public const int TopLevel = FlatlandsHeightOffset + WaterLevel + HeightAmplitude;
-        public const int Average = (TopLevel + DepthLevel) / 2;
-        public const int Range = (TopLevel - DepthLevel) / 2;
-
-        // Surface generation configuration
-        public const int DirtLayers = 3;
-        public const int BeachTop = 3;
-        public const int BeachBottom = 5;
+        public const int SizeY = 32;
 
         private Block[,,] _gridBlock;
         private int[,] _heightmap;
@@ -54,6 +35,7 @@ namespace VoxelWorldEngine.Terrain
         public int OffZ { get; }
 
         public Grid Parent { get; }
+        public GenerationContext Context { get; }
 
         public TileGraphics Graphics { get; }
 
@@ -70,6 +52,7 @@ namespace VoxelWorldEngine.Terrain
             : base(parent.Game)
         {
             Parent = parent;
+            Context = parent.GenerationContext;
             IndexX = idxX;
             IndexY = idxY;
             IndexZ = idxZ;
@@ -86,7 +69,22 @@ namespace VoxelWorldEngine.Terrain
 
             Initialized = true;
 
-            RunProcess(GenTerrain, 0);
+            RunProcess(GenTerrain, 0).ContinueWith(MarkNeighboursDirty);
+        }
+
+        private void MarkNeighboursDirty(PriorityScheduler.PositionedTask task)
+        {
+            if (IsSparse) return;
+
+            IsDirty = true;
+
+            //Tile tile;
+            //if (Parent.Find(IndexX - 1, IndexY, IndexZ, out tile)) tile.MarkDirty();
+            //if (Parent.Find(IndexX + 1, IndexY, IndexZ, out tile)) tile.MarkDirty();
+            //if (Parent.Find(IndexX, IndexY - 1, IndexZ, out tile)) tile.MarkDirty();
+            //if (Parent.Find(IndexX, IndexY + 1, IndexZ, out tile)) tile.MarkDirty();
+            //if (Parent.Find(IndexX, IndexY, IndexZ - 1, out tile)) tile.MarkDirty();
+            //if (Parent.Find(IndexX, IndexY, IndexZ + 1, out tile)) tile.MarkDirty();
         }
 
         private readonly ConcurrentQueue<Action>[] _pendingActions = {
@@ -108,21 +106,12 @@ namespace VoxelWorldEngine.Terrain
                 _pendingActions[phase+1].Enqueue(action);
         }
 
-        private void RunProcess(Action process, int phase)
+        public PriorityScheduler.PositionedTask RunProcess(Action process, int phase)
         {
-            PriorityScheduler.StartNew(process, Centroid).ContinueWith(task =>
-            {
-                if (IsSparse) return;
+            Parent.TilesInProgress++;
 
-                IsDirty = true;
-
-                Tile tile;
-                if (Parent.Find(IndexX - 1, IndexY, IndexZ, out tile)) tile.MarkDirty();
-                if (Parent.Find(IndexX + 1, IndexY, IndexZ, out tile)) tile.MarkDirty();
-                if (Parent.Find(IndexX, IndexY - 1, IndexZ, out tile)) tile.MarkDirty();
-                if (Parent.Find(IndexX, IndexY + 1, IndexZ, out tile)) tile.MarkDirty();
-                if (Parent.Find(IndexX, IndexY, IndexZ - 1, out tile)) tile.MarkDirty();
-                if (Parent.Find(IndexX, IndexY, IndexZ + 1, out tile)) tile.MarkDirty();
+            return PriorityScheduler.StartNew(process, Centroid).ContinueWith(t => {
+                Parent.TilesInProgress--;
             });
         }
 
@@ -134,8 +123,6 @@ namespace VoxelWorldEngine.Terrain
         int dependencies1 = 0;
         void GenTerrain()
         {
-            Parent.TilesInProgress++;
-
             for (int z = 0; z < SizeXZ; z++)
             {
                 int pz = IndexZ * SizeXZ + z;
@@ -151,9 +138,9 @@ namespace VoxelWorldEngine.Terrain
 
                         var block = Block.Unbreakite;
 
-                        if (OffY + y > Floor)
+                        if (OffY + y > Context.Floor)
                         {
-                            var density = Parent.GetDensityAt(px, py, pz);
+                            var density = Context.GetDensityAt(px, py, pz);
 
                             if (density < 0.0)
                             {
@@ -182,24 +169,22 @@ namespace VoxelWorldEngine.Terrain
                 }
             }
             
-            int relativeWaterLevel = WaterLevel - OffY;
-            int relativeFloorLevel = Floor - OffY;
+            int relativeWaterLevel = Context.WaterLevel - OffY;
 
             // Add seawater
             for (int z = 0; z < SizeXZ; z++)
             {
                 for (int x = 0; x < SizeXZ; x++)
                 {
-                    int y = Math.Min(SizeY-1, relativeWaterLevel);
-                    while (y >= relativeFloorLevel && GetBlock(x,y,z) == Block.Air)
+                    for (int y = 0; y < relativeWaterLevel; y++)
                     {
-                        SetBlock(x, y, z, Block.SeaWater);
-                        y--;
+                        if (GetBlock(x, y, z) == Block.Air)
+                        {
+                            SetBlock(x, y, z, Block.SeaWater);
+                        }
                     }
                 }
             }
-
-            Parent.TilesInProgress--;
 
             if (IsSparse)
             {
@@ -227,7 +212,7 @@ namespace VoxelWorldEngine.Terrain
 
                     if (dependantDown == null && dependantUp == null)
                     {
-                        RunProcess(PostProcessSurface, 1);
+                        RunProcess(PostProcessSurface, 1).ContinueWith(MarkNeighboursDirty);
                     }
                     // else will be called by the last 
                 });
@@ -238,15 +223,13 @@ namespace VoxelWorldEngine.Terrain
         {
             if (Interlocked.Decrement(ref dependencies1) == 0)
             {
-                RunProcess(PostProcessSurface, 1);
+                RunProcess(PostProcessSurface, 1).ContinueWith(MarkNeighboursDirty);
             }
         }
 
         private void PostProcessSurface()
         {
-            Parent.TilesInProgress++;
-
-            int relativeWaterLevel = WaterLevel - OffY;
+            int relativeWaterLevel = Context.WaterLevel - OffY;
             for (int z = 0; z < SizeXZ; z++)
             {
                 var oz = OffZ + z;
@@ -290,7 +273,7 @@ namespace VoxelWorldEngine.Terrain
                         {
                             replaceWith1 = replaceWith2 = Block.Granite;
                         }
-                        else if (yy >= relativeWaterLevel - BeachBottom && yy <= relativeWaterLevel + BeachTop)
+                        else if (yy >= relativeWaterLevel - Context.BeachBottom && yy <= relativeWaterLevel + Context.BeachTop)
                         {
                             replaceWith1 = replaceWith2 = Block.Sand;
                         }
@@ -306,7 +289,7 @@ namespace VoxelWorldEngine.Terrain
 
                         if (replaceWith1 != null)
                         {
-                            for (int y = 0; y <= DirtLayers; y++, yy--)
+                            for (int y = 0; y <= Context.DirtLayers; y++, yy--)
                             {
                                 var oy = OffY + yy;
 
@@ -335,8 +318,6 @@ namespace VoxelWorldEngine.Terrain
             }
 
             Interlocked.Exchange(ref _generationPhase, 1);
-
-            Parent.TilesInProgress--;
         }
 
         public int GetSolidTop(int x, int z)

@@ -81,6 +81,7 @@
     <Compile Include="Objects\RenderingMaterial.cs" />
     <Compile Include="Objects\PhysicsMaterial.cs" />
     <Compile Include="Registry\GenericRegistry.cs" />
+    <Compile Include="Terrain\GenerationContext.cs" />
     <Compile Include="Util\SingleAccessVerify.cs" />
     <Compile Include="Terrain\TileGraphics.cs" />
     <Compile Include="Util\MouseExtras.cs" />

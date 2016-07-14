@@ -28,17 +28,93 @@ namespace VoxelWorldEngine.Terrain
 
         private readonly VertexCollectorManager _collectorManager = new VertexCollectorManager();
 
-        private const float Ambient = 8.0f; // the bigger this number, the lesser the AO effect
+        private const int Ambient = 8; // the bigger this number, the lesser the AO effect
 
         public HashSet<Mesh> Meshes { get; } = new HashSet<Mesh>();
 
+
+        public int Busy;
+        public bool Rebuild()
+        {
+            if (Tile.IsSparse)
+            {
+                return true;
+            }
+
+            if (Interlocked.Exchange(ref Busy, 1) != 0)
+                return false;
+
+#if true
+            var before = Environment.TickCount;
+            GenMeshes();
+            var middle = Environment.TickCount;
+            AfterGenMeshes();
+            var after = Environment.TickCount;
+
+            Debug.WriteLine($"Generating meshes... a={middle - before}, b={after - middle}, p=({Tile.IndexX},{Tile.IndexY},{Tile.IndexZ})");
+#else
+            Tile.RunProcess(GenMeshes, 2).ContinueWith(_ => Tile.InvokeAfter(-1, AfterGenMeshes));
+#endif
+
+            return true;
+        }
+
+        private void AfterGenMeshes()
+        {
+            Debug.Assert(Thread.CurrentThread == VoxelGame.GameThread);
+
+            List<MeshBuilder> builders;
+            while (_builders.TryDequeue(out builders))
+            {
+                foreach (var m in Meshes)
+                    m.Dispose();
+
+                Meshes.Clear();
+
+                foreach (var builder in builders)
+                {
+                    var mesh = builder.Build(Game);
+                    if (mesh != null)
+                        Meshes.Add(mesh);
+                    builder.Clear();
+                }
+            }
+            Interlocked.Exchange(ref Busy, 0);
+        }
+
         public void GenMeshes()
         {
-            Parent.TilesInProgress++;
-
             _collectorManager.Clear();
 
             var scale = new Vector3(Tile.VoxelSizeX, Tile.VoxelSizeY, Tile.VoxelSizeZ);
+
+            var occlusion = new uint[Tile.SizeXZ + 1, Tile.SizeXZ + 1, Tile.SizeY + 1];
+
+            for (int z = 0; z < Tile.SizeXZ; z++)
+            {
+                int oz = z + Tile.OffZ;
+
+                for (int x = 0; x < Tile.SizeXZ; x++)
+                {
+                    int ox = x + Tile.OffX;
+
+                    for (int y = 0; y < Tile.SizeY; y++)
+                    {
+                        int oy = y + Tile.OffY;
+                        
+                        uint a = IsOpaque(ox, oy, oz) ? 1u : 0u;
+                        uint b = IsOpaque(ox, oy, oz) ? 1u : 0u;
+                        uint c = IsOpaque(ox, oy, oz) ? 1u : 0u;
+                        uint d = IsOpaque(ox, oy, oz) ? 1u : 0u;
+                        uint e = IsOpaque(ox, oy, oz) ? 1u : 0u; 
+                        uint f = IsOpaque(ox, oy, oz) ? 1u : 0u;
+                        uint g = IsOpaque(ox, oy, oz) ? 1u : 0u;
+                        uint h = IsOpaque(ox, oy, oz) ? 1u : 0u;
+
+                        occlusion[z, x, y] = a + b + c + d + e + f + g + h;
+                    }
+                }
+            }
 
             for (int z = 0; z < Tile.SizeXZ; z++)
             {
@@ -68,20 +144,20 @@ namespace VoxelWorldEngine.Terrain
                         bool s5 = ShowSide(ox, oy, oz - 1, queue);
                         bool s6 = ShowSide(ox, oy, oz + 1, queue);
 
-                        bool center = IsOpaque(ox, oy, oz);
+                        bool center = (s1 || s2 || s3 || s4 || s5 || s6) && IsOpaque(ox, oy, oz);
 
-                        bool onno = IsOpaque(ox - 1, oy - 1, oz);
-                        bool onpo = IsOpaque(ox - 1, oy + 1, oz);
-                        bool onon = IsOpaque(ox - 1, oy, oz - 1);
-                        bool onop = IsOpaque(ox - 1, oy, oz + 1);
-                        bool opno = IsOpaque(ox + 1, oy - 1, oz);
-                        bool oppo = IsOpaque(ox + 1, oy + 1, oz);
-                        bool opon = IsOpaque(ox + 1, oy, oz - 1);
-                        bool opop = IsOpaque(ox + 1, oy, oz + 1);
-                        bool oonn = IsOpaque(ox, oy - 1, oz - 1);
-                        bool oonp = IsOpaque(ox, oy - 1, oz + 1);
-                        bool oopn = IsOpaque(ox, oy + 1, oz - 1);
-                        bool oopp = IsOpaque(ox, oy + 1, oz + 1);
+                        bool onno = (s3 || s1) && IsOpaque(ox - 1, oy - 1, oz);
+                        bool onpo = (s4 || s1) && IsOpaque(ox - 1, oy + 1, oz);
+                        bool onon = (s5 || s1) && IsOpaque(ox - 1, oy, oz - 1);
+                        bool onop = (s6 || s1) && IsOpaque(ox - 1, oy, oz + 1);
+                        bool opno = (s3 || s2) && IsOpaque(ox + 1, oy - 1, oz);
+                        bool oppo = (s4 || s2) && IsOpaque(ox + 1, oy + 1, oz);
+                        bool opon = (s5 || s2) && IsOpaque(ox + 1, oy, oz - 1);
+                        bool opop = (s6 || s2) && IsOpaque(ox + 1, oy, oz + 1);
+                        bool oonn = (s5 || s3) && IsOpaque(ox, oy - 1, oz - 1);
+                        bool oonp = (s6 || s3) && IsOpaque(ox, oy - 1, oz + 1);
+                        bool oopn = (s5 || s4) && IsOpaque(ox, oy + 1, oz - 1);
+                        bool oopp = (s6 || s4) && IsOpaque(ox, oy + 1, oz + 1);
 
                         if (s1)
                         {
@@ -90,15 +166,15 @@ namespace VoxelWorldEngine.Terrain
                             var pos3 = new Vector3(px - 0.5f, py + 0.5f, pz + 0.5f) * scale;
                             var pos4 = new Vector3(px - 0.5f, py + 0.5f, pz - 0.5f) * scale;
 
-                            uint eds = Occlusion(center, onno, onon);
-                            uint edn = Occlusion(center, onno, onop);
-                            uint eus = Occlusion(center, onpo, onon);
-                            uint eun = Occlusion(center, onpo, onop);
+                            var c1 = (int)((Ambient - Occlusion(center, onno, onon)) * 255 / Ambient);
+                            var c2 = (int)((Ambient - Occlusion(center, onno, onop)) * 255 / Ambient);
+                            var c3 = (int)((Ambient - Occlusion(center, onpo, onop)) * 255 / Ambient);
+                            var c4 = (int)((Ambient - Occlusion(center, onpo, onon)) * 255 / Ambient);
 
-                            var color1 = new Color((Ambient - eds) / Ambient * Vector3.One);
-                            var color2 = new Color((Ambient - edn) / Ambient * Vector3.One);
-                            var color3 = new Color((Ambient - eun) / Ambient * Vector3.One);
-                            var color4 = new Color((Ambient - eus) / Ambient * Vector3.One);
+                            var color1 = new Color(c1,c1,c1);
+                            var color2 = new Color(c2,c2,c2);
+                            var color3 = new Color(c3,c3,c3);
+                            var color4 = new Color(c4,c4,c4);
 
                             AddFace(
                                 _collectorManager, block, queue,
@@ -114,15 +190,15 @@ namespace VoxelWorldEngine.Terrain
                             var pos3 = new Vector3(px + 0.5f, py + 0.5f, pz - 0.5f) * scale;
                             var pos4 = new Vector3(px + 0.5f, py + 0.5f, pz + 0.5f) * scale;
 
-                            uint wds = Occlusion(center, opno, opon);
-                            uint wdn = Occlusion(center, opno, opop);
-                            uint wus = Occlusion(center, oppo, opon);
-                            uint wun = Occlusion(center, oppo, opop);
+                            var c1 = (int)((Ambient - Occlusion(center, opno, opop)) * 255 / Ambient);
+                            var c2 = (int)((Ambient - Occlusion(center, opno, opon)) * 255 / Ambient);
+                            var c3 = (int)((Ambient - Occlusion(center, oppo, opon)) * 255 / Ambient);
+                            var c4 = (int)((Ambient - Occlusion(center, oppo, opop)) * 255 / Ambient);
 
-                            var color1 = new Color((Ambient - wdn) / Ambient * Vector3.One);
-                            var color2 = new Color((Ambient - wds) / Ambient * Vector3.One);
-                            var color3 = new Color((Ambient - wus) / Ambient * Vector3.One);
-                            var color4 = new Color((Ambient - wun) / Ambient * Vector3.One);
+                            var color1 = new Color(c1, c1, c1);
+                            var color2 = new Color(c2, c2, c2);
+                            var color3 = new Color(c3, c3, c3);
+                            var color4 = new Color(c4, c4, c4);
 
                             AddFace(
                                 _collectorManager, block, queue,
@@ -138,15 +214,15 @@ namespace VoxelWorldEngine.Terrain
                             var pos3 = new Vector3(px + 0.5f, py - 0.5f, pz + 0.5f) * scale;
                             var pos4 = new Vector3(px - 0.5f, py - 0.5f, pz + 0.5f) * scale;
 
-                            uint wus = Occlusion(onno, center, oonn);
-                            uint eus = Occlusion(opno, center, oonn);
-                            uint wun = Occlusion(onno, center, oonp);
-                            uint eun = Occlusion(opno, center, oonp);
+                            var c1 = (int)((Ambient - Occlusion(onno, center, oonn)) * 255 / Ambient);
+                            var c2 = (int)((Ambient - Occlusion(opno, center, oonn)) * 255 / Ambient);
+                            var c3 = (int)((Ambient - Occlusion(opno, center, oonp)) * 255 / Ambient);
+                            var c4 = (int)((Ambient - Occlusion(onno, center, oonp)) * 255 / Ambient);
 
-                            var color1 = new Color((Ambient - wus) / Ambient * Vector3.One);
-                            var color2 = new Color((Ambient - eus) / Ambient * Vector3.One);
-                            var color3 = new Color((Ambient - eun) / Ambient * Vector3.One);
-                            var color4 = new Color((Ambient - wun) / Ambient * Vector3.One);
+                            var color1 = new Color(c1, c1, c1);
+                            var color2 = new Color(c2, c2, c2);
+                            var color3 = new Color(c3, c3, c3);
+                            var color4 = new Color(c4, c4, c4);
 
                             AddFace(
                                 _collectorManager, block, queue,
@@ -162,15 +238,15 @@ namespace VoxelWorldEngine.Terrain
                             var pos3 = new Vector3(px + 0.5f, py + 0.5f, pz - 0.5f) * scale;
                             var pos4 = new Vector3(px - 0.5f, py + 0.5f, pz - 0.5f) * scale;
 
-                            uint wds = Occlusion(onpo, center, oopn);
-                            uint eds = Occlusion(oppo, center, oopn);
-                            uint wdn = Occlusion(onpo, center, oopp);
-                            uint edn = Occlusion(oppo, center, oopp);
+                            var c1 = (int)((Ambient - Occlusion(onpo, center, oopp)) * 255 / Ambient);
+                            var c2 = (int)((Ambient - Occlusion(oppo, center, oopp)) * 255 / Ambient);
+                            var c3 = (int)((Ambient - Occlusion(oppo, center, oopn)) * 255 / Ambient);
+                            var c4 = (int)((Ambient - Occlusion(onpo, center, oopn)) * 255 / Ambient);
 
-                            var color1 = new Color((Ambient - wdn) / Ambient * Vector3.One);
-                            var color2 = new Color((Ambient - edn) / Ambient * Vector3.One);
-                            var color3 = new Color((Ambient - eds) / Ambient * Vector3.One);
-                            var color4 = new Color((Ambient - wds) / Ambient * Vector3.One);
+                            var color1 = new Color(c1, c1, c1);
+                            var color2 = new Color(c2, c2, c2);
+                            var color3 = new Color(c3, c3, c3);
+                            var color4 = new Color(c4, c4, c4);
 
                             AddFace(
                                 _collectorManager, block, queue,
@@ -186,15 +262,15 @@ namespace VoxelWorldEngine.Terrain
                             var pos3 = new Vector3(px - 0.5f, py + 0.5f, pz - 0.5f) * scale;
                             var pos4 = new Vector3(px + 0.5f, py + 0.5f, pz - 0.5f) * scale;
 
-                            uint wdn = Occlusion(onon, oonn, center);
-                            uint edn = Occlusion(opon, oonn, center);
-                            uint wun = Occlusion(onon, oopn, center);
-                            uint eun = Occlusion(opon, oopn, center);
+                            var c1 = (int)((Ambient - Occlusion(opon, oonn, center)) * 255 / Ambient);
+                            var c2 = (int)((Ambient - Occlusion(onon, oonn, center)) * 255 / Ambient);
+                            var c3 = (int)((Ambient - Occlusion(onon, oopn, center)) * 255 / Ambient);
+                            var c4 = (int)((Ambient - Occlusion(opon, oopn, center)) * 255 / Ambient);
 
-                            var color1 = new Color((Ambient - edn) / Ambient * Vector3.One);
-                            var color2 = new Color((Ambient - wdn) / Ambient * Vector3.One);
-                            var color3 = new Color((Ambient - wun) / Ambient * Vector3.One);
-                            var color4 = new Color((Ambient - eun) / Ambient * Vector3.One);
+                            var color1 = new Color(c1, c1, c1);
+                            var color2 = new Color(c2, c2, c2);
+                            var color3 = new Color(c3, c3, c3);
+                            var color4 = new Color(c4, c4, c4);
 
                             AddFace(
                                 _collectorManager, block, queue,
@@ -210,15 +286,15 @@ namespace VoxelWorldEngine.Terrain
                             var pos3 = new Vector3(px + 0.5f, py + 0.5f, pz + 0.5f) * scale;
                             var pos4 = new Vector3(px - 0.5f, py + 0.5f, pz + 0.5f) * scale;
 
-                            uint wds = Occlusion(onop, oonp, center);
-                            uint eds = Occlusion(opop, oonp, center);
-                            uint wus = Occlusion(onop, oopp, center);
-                            uint eus = Occlusion(opop, oopp, center);
+                            var c1 = (int)((Ambient - Occlusion(onop, oonp, center)) * 255 / Ambient);
+                            var c2 = (int)((Ambient - Occlusion(opop, oonp, center)) * 255 / Ambient);
+                            var c3 = (int)((Ambient - Occlusion(opop, oopp, center)) * 255 / Ambient);
+                            var c4 = (int)((Ambient - Occlusion(onop, oopp, center)) * 255 / Ambient);
 
-                            var color1 = new Color((Ambient - wds) / Ambient * Vector3.One);
-                            var color2 = new Color((Ambient - eds) / Ambient * Vector3.One);
-                            var color3 = new Color((Ambient - eus) / Ambient * Vector3.One);
-                            var color4 = new Color((Ambient - wus) / Ambient * Vector3.One);
+                            var color1 = new Color(c1, c1, c1);
+                            var color2 = new Color(c2, c2, c2);
+                            var color3 = new Color(c3, c3, c3);
+                            var color4 = new Color(c4, c4, c4);
 
                             AddFace(
                                 _collectorManager, block, queue,
@@ -231,8 +307,6 @@ namespace VoxelWorldEngine.Terrain
             }
 
             _builders.Enqueue(_collectorManager.Collectors.Values.ToList());
-
-            Parent.TilesInProgress--;
         }
 
         private uint Occlusion(bool a, bool b, bool c)
@@ -284,7 +358,6 @@ namespace VoxelWorldEngine.Terrain
                 new VertexFormats.PosColorTexNormal(pos4, normal, color4, tex4));
         }
 
-        
         public override void Update(GameTime gameTime)
         {
             base.Update(gameTime);
@@ -302,45 +375,6 @@ namespace VoxelWorldEngine.Terrain
                     }
                 }
             }
-        }
-
-        public int Busy;
-        public bool Rebuild()
-        {
-            if (Tile.IsSparse)
-            {
-                return true;
-            }
-
-            if (Interlocked.Exchange(ref Busy, 1) != 0)
-                return false;
-
-            PriorityScheduler.StartNew(GenMeshes, Tile.Centroid).ContinueWith(task => {
-                Tile.InvokeAfter(-1, () =>
-                {
-                    Debug.Assert(Thread.CurrentThread == VoxelGame.GameThread);
-
-                    List<MeshBuilder> builders;
-                    while (_builders.TryDequeue(out builders))
-                    {
-                        foreach (var m in Meshes)
-                            m.Dispose();
-
-                        Meshes.Clear();
-
-                        foreach (var builder in builders)
-                        {
-                            var mesh = builder.Build(Game);
-                            if (mesh != null)
-                                Meshes.Add(mesh);
-                            builder.Clear();
-                        }
-                    }
-                    Interlocked.Exchange(ref Busy, 0);
-                });
-            });
-
-            return true;
         }
     }
 }

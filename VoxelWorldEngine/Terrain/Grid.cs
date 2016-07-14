@@ -15,6 +15,7 @@ namespace VoxelWorldEngine.Terrain
     public class Grid : DrawableGameComponent
     {
         public static int MaxTilesInProgress = PriorityScheduler.Instance.MaximumConcurrencyLevel * 2;
+        public static int MaxTilesQueued = MaxTilesInProgress;
         public static int LoadRange = 32;
         public static int UnloadRange = 32;
 
@@ -27,23 +28,18 @@ namespace VoxelWorldEngine.Terrain
 
         public int PendingTiles => _pendingTiles.Count;
 
-        public int Seed { get; } = (int)DateTime.UtcNow.Ticks;
         public int TilesInProgress { get; set; }
 
         public Vector3I SpawnPosition { get; set; }
 
-        public Simplex PerlinDensity { get; }
-        public Simplex PerlinHeight { get; }
-        public Simplex PerlinRoughness { get; }
         public Random Random { get; }
+
+        public GenerationContext GenerationContext { get; } = new GenerationContext();
 
         public Grid(Game game)
             : base(game)
         {
-            PerlinDensity = new Simplex(Seed);
-            PerlinHeight = new Simplex(Seed * 3);
-            PerlinRoughness = new Simplex(Seed * 5);
-            Random = new Random(Seed);
+            Random = new Random(GenerationContext.Seed);
         }
 
         Vector3D _lastPlayerPosition;
@@ -67,6 +63,8 @@ namespace VoxelWorldEngine.Terrain
 
             if ((distance > 5 && (Environment.TickCount - before) > 1000) || bootstrap)
             {
+                Debug.WriteLine("Re-computing visible chunks...");
+
                 before = Environment.TickCount; 
 
                 bootstrap = false;
@@ -90,8 +88,8 @@ namespace VoxelWorldEngine.Terrain
                 }
 
                 var l = new List<Vector3I>();
-                var fOffY = Tile.Floor / Tile.SizeY - tp.Y;
-                var cOffY = Tile.Ceiling / Tile.SizeY - tp.Y;
+                var fOffY = GenerationContext.Floor / Tile.SizeY - tp.Y;
+                var cOffY = GenerationContext.Ceiling / Tile.SizeY - tp.Y;
                 for (int r = 0; r < LoadRange; r++)
                 {
                     for (int z = -r; z <= r; z++)
@@ -117,7 +115,7 @@ namespace VoxelWorldEngine.Terrain
                 var size = new Vector3D(Tile.SizeXZ, Tile.SizeY, Tile.SizeXZ);
                 Func<Vector3I,double> valueFunc = a => (a * size + cen - newPosition).SqrMagnitude;
                 l.Sort((a, b) => Math.Sign(valueFunc(a) - valueFunc(b)));
-                for (int i = 0; i < l.Count && TilesInProgress < MaxTilesInProgress; i++)
+                for (int i = 0; i < l.Count && _pendingTiles.Count < MaxTilesQueued; i++)
                 {
                     var vec = l[i];
                     int x = vec.X;
@@ -165,7 +163,7 @@ namespace VoxelWorldEngine.Terrain
         public bool Require(int x, int y, int z, out Tile tile)
         {
             tile = null;
-            if (y < (Tile.Floor / Tile.SizeY) || y >= (Tile.Ceiling / Tile.SizeY))
+            if (y < (GenerationContext.Floor / Tile.SizeY) || y >= (GenerationContext.Ceiling / Tile.SizeY))
                 return false;
             if (!Find(x, y, z, out tile))
             {
@@ -254,56 +252,10 @@ namespace VoxelWorldEngine.Terrain
             }
             else
             {
-                while (y > Tile.Floor && !GetBlock(x, y, z).PhysicsMaterial.IsSolid)
+                while (y > GenerationContext.Floor && !GetBlock(x, y, z).PhysicsMaterial.IsSolid)
                     y--;
             }
             return y;
-        }
-
-        internal double GetDensityAt(int px, int py, int pz)
-        {
-            var nx = (px + 0.5) / 128;
-            var ny = (py + 0.5) / 256;
-            var nz = (pz + 0.5) / 128;
-
-            var hx = nx / 2;
-            var hz = nz / 2;
-
-            var rx = nx / 3;
-            var rz = nz / 3;
-
-            var ph = PerlinHeight.Noise(hx, hz, 2);
-            var heightChange = ExpectedHeight(ph);
-
-            var rh = PerlinRoughness.Noise(rx, rz, 2);
-            var roughness = ExpectedHeight(rh, 0.45, 3);
-
-            var baseHeight = Tile.Average + Tile.Range * 0.15 * heightChange;
-
-            var bottom = baseHeight - Tile.Range;
-            var top = baseHeight + Tile.Range;
-
-            var baseDensity = 0.5 - Math.Max(0, Math.Min(1, (py - bottom) / (top - bottom)));
-
-            var noise = heightChange > 0.5 ?
-                PerlinDensity.Noise(nx, ny, nz, 5, 1.7) :
-                PerlinDensity.Noise(nx, ny, nz, 4);
-
-            return 0.1f * roughness * noise + baseDensity;
-        }
-
-        private double ExpectedHeight(double initial)
-        {//1.3*x^5 - 0.55*x^3 + 0.15*x
-            double powered3 = Math.Pow(initial, 3);
-            double powered5 = Math.Pow(initial, 5);
-            double powered = 1.3 * powered5 - 0.55 * powered3 + 0.15 * initial;
-            return powered;
-        }
-
-        private double ExpectedHeight(double initial, double factor, int power)
-        {//1.3*x^5 - 0.55*x^3 + 0.15*x
-            double powered = Math.Pow(initial, power);
-            return initial + factor * (powered - initial);
         }
 
         internal void FindSpawnPosition()
@@ -318,34 +270,34 @@ namespace VoxelWorldEngine.Terrain
                 var a = Random.NextDouble() * Math.PI * 2;
                 x = (int)(range * Math.Cos(a));
                 z = (int)(range * Math.Sin(a));
-                y = Tile.WaterLevel;
+                y = GenerationContext.WaterLevel;
 
-                if (GetDensityAt(x, y, z) < 0)
+                if (GenerationContext.GetDensityAt(x, y, z) < 0)
                 {
                     range += 5;
                     // try again
                     continue;
                 }
 
-                while (y < Tile.Ceiling)
+                while (y < GenerationContext.Ceiling)
                 {
-                    if (GetDensityAt(x, y++, z) >= 0)
+                    if (GenerationContext.GetDensityAt(x, y++, z) >= 0)
                     {
                         continue;
                     }
-                    if (GetDensityAt(x, y++, z) >= 0)
+                    if (GenerationContext.GetDensityAt(x, y++, z) >= 0)
                     {
                         continue;
                     }
-                    if (GetDensityAt(x, y++, z) >= 0)
+                    if (GenerationContext.GetDensityAt(x, y++, z) >= 0)
                     {
                         continue;
                     }
-                    if (GetDensityAt(x, y++, z) < 0)
+                    if (GenerationContext.GetDensityAt(x, y++, z) < 0)
                         break;
                 }
 
-                if (y < Tile.Ceiling)
+                if (y < GenerationContext.Ceiling)
                     break;
 
                 range += 5;
@@ -366,9 +318,7 @@ namespace VoxelWorldEngine.Terrain
         {
             base.Initialize();
 
-            PerlinDensity.Initialize();
-            PerlinHeight.Initialize();
-            PerlinRoughness.Initialize();
+            GenerationContext.Initialize();
 
             FindSpawnPosition();
         }

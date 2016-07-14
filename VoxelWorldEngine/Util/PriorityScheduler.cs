@@ -11,7 +11,7 @@ namespace VoxelWorldEngine.Util
 
         private readonly List<PositionedTask> _tasks = new List<PositionedTask>();
         private readonly Semaphore _awaitTasks = new Semaphore(0, 1);
-        private readonly Mutex _lockTasks = new Mutex();
+        private readonly ReaderWriterLockSlim _lockTasks = new ReaderWriterLockSlim();
 
         private Thread[] _threads;
         public int MaximumConcurrencyLevel { get; set; } = Math.Max(1, Environment.ProcessorCount - 1);
@@ -26,14 +26,14 @@ namespace VoxelWorldEngine.Util
             var difference = newPosition - _lastPlayerPosition;
             var distance = difference.SqrMagnitude;
 
-            if (distance > 5 && (Environment.TickCount - before) > 1000)
+            if (distance > 5 && (Environment.TickCount - before) >= 1000)
             {
-                if (_lockTasks.WaitOne())
+                _lockTasks.EnterWriteLock();
                 {
-                    Debug.WriteLine("Sorting...");
+                    Debug.WriteLine("Sorting Tasks...");
                     _tasks.Sort((a, b) => -Math.Sign(a.Score(_lastPlayerPosition) - b.Score(_lastPlayerPosition)));
-                    _lockTasks.ReleaseMutex();
                 }
+                _lockTasks.ExitWriteLock();
                 _lastPlayerPosition = newPosition;
                 before = Environment.TickCount;
             }
@@ -46,14 +46,14 @@ namespace VoxelWorldEngine.Util
                 PositionedTask task = null;
                 try
                 {
-                    if (_lockTasks.WaitOne())
+                    _lockTasks.EnterReadLock();
                     {
                         bool lockAcquired = _awaitTasks.WaitOne(0);
                         if (!lockAcquired)
                         {
-                            _lockTasks.ReleaseMutex();
+                            _lockTasks.ExitReadLock();
                             lockAcquired = _awaitTasks.WaitOne();
-                            _lockTasks.WaitOne();
+                            _lockTasks.EnterReadLock();
                         }
 
                         if (lockAcquired)
@@ -65,8 +65,8 @@ namespace VoxelWorldEngine.Util
                                 _awaitTasks.Release();
                             }
                         }
-                        _lockTasks.ReleaseMutex();
                     }
+                    _lockTasks.ExitReadLock();
                 }
                 catch (ObjectDisposedException)
                 {
@@ -84,7 +84,7 @@ namespace VoxelWorldEngine.Util
         {
             var pos = _lastPlayerPosition;
 
-            if (_lockTasks.WaitOne())
+            _lockTasks.EnterWriteLock();
             {
                 var score = task.Score(pos);
                 bool inserted = false;
@@ -139,26 +139,29 @@ namespace VoxelWorldEngine.Util
                 {
                     _awaitTasks.Release();
                 }
-                _lockTasks.ReleaseMutex();
             }
+            _lockTasks.ExitWriteLock();
 
             if (_threads == null)
             {
                 _threads = new Thread[MaximumConcurrencyLevel];
                 for (int i = 0; i < _threads.Length; i++)
                 {
-                    (_threads[i] = new Thread(() =>
-                    {
-                        foreach (var t in GetNextTask())
-                            TryExecuteTask(t);
-                    })
+                    _threads[i] = new Thread(ThreadProc)
                     {
                         Name = string.Format("PriorityScheduler: ", i),
                         Priority = ThreadPriority.Lowest,
                         IsBackground = true
-                    }).Start();
+                    };
+                    _threads[i].Start();
                 }
             }
+        }
+
+        private void ThreadProc()
+        {
+            foreach (var t in GetNextTask())
+                TryExecuteTask(t);
         }
 
         int cnt = 0;

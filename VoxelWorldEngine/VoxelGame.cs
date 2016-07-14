@@ -205,13 +205,13 @@ namespace VoxelWorldEngine
                     int qx = (int)Math.Floor(playerPosition.X / Tile.VoxelSizeX + 0.4f);
                     int qz = (int)Math.Floor(playerPosition.Z / Tile.VoxelSizeZ + 0.4f);
 
-                    int yy = Tile.Floor - 1, xx = px, zz = pz;
-                    int ty;
+                    int yy = grid.GenerationContext.Floor - 1, xx = px, zz = pz;
 
                     for (int rz = pz; rz <= qz; rz++)
                     {
                         for (int rx = px; rx <= qx; rx++)
                         {
+                            int ty;
                             if ((ty = grid.FindGround(rx, py, rz)) > yy)
                             {
                                 yy = ty;
