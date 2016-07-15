@@ -95,11 +95,6 @@ namespace VoxelWorldEngine.Terrain
 
         public void InvokeAfter(int phase, Action action)
         {
-            if (!Initialized)
-            {
-                _pendingActions[0].Enqueue(() => { Parent.QueueTile(this); });
-            }
-
             if (_generationPhase >= phase && Thread.CurrentThread == VoxelGame.GameThread)
                 action();
             else
@@ -246,8 +241,8 @@ namespace VoxelWorldEngine.Terrain
 
                         for (int y = 0; y < DirtLayers; y++)
                         {
-                            var b = _parent.GetBlock(ox, _offY + top + y, oz);
-                            if (!b.PhysicsMaterial.IsSolid)
+                            var load = _parent.GetBlock(ox, _offY + top + y, oz);
+                            if (!load.PhysicsMaterial.IsSolid)
                             {
                                 groundFound = true;
                                 top += y;
@@ -263,9 +258,7 @@ namespace VoxelWorldEngine.Terrain
 
                     while (yy >= 0)
                     {
-                        var oyy = OffY + yy;
-
-                        var above = Parent.GetBlock(ox, oyy + 1, oz);
+                        var above = GetBlockRelative(x, yy + 1, z);
 
                         Block replaceWith1 = null;
                         Block replaceWith2 = null;
@@ -293,23 +286,23 @@ namespace VoxelWorldEngine.Terrain
                             {
                                 var oy = OffY + yy;
 
-                                if (!Parent.GetBlock(ox, oy, oz).PhysicsMaterial.IsSolid)
+                                if (!GetBlockRelative(x, yy, z).PhysicsMaterial.IsSolid)
                                     break;
 
-                                var below = Parent.GetBlock(ox, oy - 1, oz);
+                                var below = GetBlockRelative(x, yy - 1, z);
                                 if (!below.PhysicsMaterial.IsSolid)
                                     break;
 
-                                Parent.SetBlock(ox, oy, oz, y == 0 ? replaceWith1 : replaceWith2);
+                                SetBlockRelative(x, yy, z, y == 0 ? replaceWith1 : replaceWith2);
                             }
                         }
 
-                        while (yy >= 0 && Parent.GetBlock(ox, OffY + yy, oz).PhysicsMaterial != PhysicsMaterial.Air)
+                        while (yy >= 0 && GetBlockRelative(x, yy, z).PhysicsMaterial != PhysicsMaterial.Air)
                         {
                             yy--;
                         }
 
-                        while (yy >= 0 && Parent.GetBlock(ox, OffY + yy, oz).PhysicsMaterial == PhysicsMaterial.Air)
+                        while (yy >= 0 && GetBlockRelative(x, yy, z).PhysicsMaterial == PhysicsMaterial.Air)
                         {
                             yy--;
                         }
@@ -325,6 +318,26 @@ namespace VoxelWorldEngine.Terrain
             if (IsSparse)
                 return -1;
             return _heightmap[x, z];
+        }
+
+        public Block GetBlockRelative(int x, int y, int z, bool load = true)
+        {
+            if (x >= 0 && x < SizeXZ &&
+                y >= 0 && y < SizeY &&
+                z >= 0 && z < SizeXZ)
+                return GetBlock(x, y, z);
+
+            return Parent.GetBlock(x + OffX, y + OffY, z + OffZ, load);
+        }
+
+        public void SetBlockRelative(int x, int y, int z, Block block)
+        {
+            if (x >= 0 && x < SizeXZ &&
+                y >= 0 && y < SizeY &&
+                z >= 0 && z < SizeXZ)
+                SetBlock(x, y, z, block);
+
+            Parent.SetBlock(x + OffX, y + OffY, z + OffZ, block);
         }
 
         public Block GetBlock(int x, int y, int z)
