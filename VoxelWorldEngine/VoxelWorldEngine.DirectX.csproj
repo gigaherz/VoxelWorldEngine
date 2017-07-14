@@ -77,13 +77,29 @@
     <Prefer32Bit>true</Prefer32Bit>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="PlayerController.cs" />
+    <Compile Include="Rendering\BaseCamera.cs" />
+    <Compile Include="Rendering\FullscreenQuad.cs" />
+    <Compile Include="Rendering\IRenderableProvider.cs" />
+    <Compile Include="Maths\EntityOrientation.cs" />
+    <Compile Include="Maths\EntityPosition.cs" />
+    <Compile Include="Maths\VectorUtils.cs" />
     <Compile Include="Objects\Block.cs" />
     <Compile Include="Objects\RenderingMaterial.cs" />
     <Compile Include="Objects\PhysicsMaterial.cs" />
     <Compile Include="Registry\GenericRegistry.cs" />
+    <Compile Include="Rendering\DeferredRenderer.cs" />
+    <Compile Include="Rendering\DirectionalLight.cs" />
+    <Compile Include="Rendering\IRenderable.cs" />
+    <Compile Include="Rendering\LightManager.cs" />
+    <Compile Include="Rendering\SSAO.cs" />
+    <Compile Include="Rendering\MeshBuilderManager.cs" />
+    <Compile Include="RenderManager.cs" />
+    <Compile Include="Terrain\Graphics\TileMesh.cs" />
+    <Compile Include="Storage\DataSystem.cs" />
     <Compile Include="Terrain\GenerationContext.cs" />
     <Compile Include="Util\SingleAccessVerify.cs" />
-    <Compile Include="Terrain\TileGraphics.cs" />
+    <Compile Include="Terrain\Graphics\TileGraphics.cs" />
     <Compile Include="Util\MouseExtras.cs" />
     <Compile Include="Registry\ObjectKey.cs" />
     <Compile Include="Noise\Perlin.cs" />
@@ -97,9 +113,9 @@
     <Compile Include="Rendering\MeshBuilder.cs" />
     <Compile Include="Rendering\VertexFormats.cs" />
     <Compile Include="Noise\Simplex.cs" />
-    <Compile Include="Util\Vector2D.cs" />
-    <Compile Include="Util\Vector3D.cs" />
-    <Compile Include="Util\Vector3I.cs" />
+    <Compile Include="Maths\Vector2D.cs" />
+    <Compile Include="Maths\Vector3D.cs" />
+    <Compile Include="Maths\Vector3I.cs" />
     <Compile Include="VoxelGame.cs" />
     <Compile Include="Terrain\Grid.cs" />
     <Compile Include="Rendering\Mesh.cs" />
@@ -117,9 +133,18 @@
   <ItemGroup>
     <None Include="app.config" />
     <None Include="Content\BasicTextured.fx" />
+    <None Include="Content\Composition.fx" />
+    <None Include="Content\DirectionalLight.fx" />
     <None Include="Content\Font.spritefont" />
+    <None Include="Content\GBuffer.fx" />
     <None Include="Content\Grass.jpg" />
+    <None Include="Content\SSAOFinal.fx" />
     <None Include="Content\Tiles.png" />
+    <None Include="Content\Clear.fx" />
+    <None Include="Content\manualSample.hlsl" />
+    <None Include="Content\RandomNormals.png" />
+    <None Include="Content\SSAO.fx" />
+    <None Include="Content\SSAOBlur.fx" />
     <Content Include="Icon.ico" />
   </ItemGroup>
   <ItemGroup>

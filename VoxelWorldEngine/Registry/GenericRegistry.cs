@@ -12,7 +12,8 @@ namespace VoxelWorldEngine.Registry
     public class GenericRegistry<T> : GenericRegistry, IDictionary<ObjectKey, T>
         where T : RegistrableObject<T>
     {
-        readonly SortedList<ObjectKey, T> _registry = new SortedList<ObjectKey, T>();
+        private readonly SortedList<ObjectKey, T> _registry = new SortedList<ObjectKey, T>();
+        private T[] _lookup = null;
 
         public int Count => _registry.Count;
         public ICollection<ObjectKey> Keys => _registry.Keys;
@@ -24,6 +25,8 @@ namespace VoxelWorldEngine.Registry
             get { return _registry[key]; }
             set { throw new InvalidOperationException("Assigning to the _registry not supported"); }
         }
+
+        public T this[ushort id] => _lookup[id];
 
         public bool ContainsKey(ObjectKey key)
         {
@@ -85,6 +88,18 @@ namespace VoxelWorldEngine.Registry
         bool ICollection<KeyValuePair<ObjectKey, T>>.Remove(KeyValuePair<ObjectKey, T> item)
         {
             throw new InvalidOperationException("Assigning to the _registry not supported");
+        }
+
+        public void Map()
+        {
+            _lookup = new T[_registry.Count];
+
+            int id = 0;
+            foreach (var r in _registry)
+            {
+                _lookup[id] = r.Value;
+                r.Key.InternalId = (ushort)id++;
+            }
         }
     }
 }

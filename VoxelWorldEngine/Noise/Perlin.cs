@@ -1,4 +1,5 @@
 ﻿using System;
+using VoxelWorldEngine.Maths;
 using VoxelWorldEngine.Util;
 
 namespace VoxelWorldEngine.Noise

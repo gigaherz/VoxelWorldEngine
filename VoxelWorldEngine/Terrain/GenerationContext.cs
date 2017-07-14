@@ -1,8 +1,6 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
+using Microsoft.Xna.Framework;
+using VoxelWorldEngine.Maths;
 using VoxelWorldEngine.Noise;
 
 namespace VoxelWorldEngine.Terrain
@@ -12,6 +10,8 @@ namespace VoxelWorldEngine.Terrain
         public Simplex PerlinDensity { get; }
         public Simplex PerlinHeight { get; }
         public Simplex PerlinRoughness { get; }
+        public Simplex PerlinSharpness { get; }
+        public Simplex PerlinOffset { get; }
 
         public int Seed { get; } = (int)DateTime.UtcNow.Ticks;
 
@@ -26,9 +26,6 @@ namespace VoxelWorldEngine.Terrain
         public int BeachBottom = 5;
 
         // Computed values for terrain configuration
-        public int VerticalChunkCount;
-        public int Floor;
-        public int Ceiling;
         public int DepthLevel;
         public int TopLevel;
         public int Average;
@@ -39,11 +36,10 @@ namespace VoxelWorldEngine.Terrain
             PerlinDensity = new Simplex(Seed);
             PerlinHeight = new Simplex(Seed * 3);
             PerlinRoughness = new Simplex(Seed * 5);
+            PerlinSharpness = new Simplex(Seed * 7);
+            PerlinOffset = new Simplex(Seed * 11);
 
             // Computed values for terrain configuration
-            VerticalChunkCount = Math.Max(1, 1 + HeightAmplitude / Tile.SizeY);
-            Floor = -VerticalChunkCount * Tile.SizeY;
-            Ceiling = VerticalChunkCount * Tile.SizeY;
             DepthLevel = FlatlandsHeightOffset + WaterLevel - HeightAmplitude;
             TopLevel = FlatlandsHeightOffset + WaterLevel + HeightAmplitude;
             Average = (TopLevel + DepthLevel) / 2;
@@ -57,53 +53,89 @@ namespace VoxelWorldEngine.Terrain
             PerlinHeight.Initialize();
             PerlinRoughness.Initialize();
         }
-
-        public double GetDensityAt(int px, int py, int pz)
+        
+        public void GetTopologyAt(Vector2I pxz, out double roughness, out double bottom, out double top)
         {
-            var nx = px * Tile.VoxelSizeX / 128.0;
-            var ny = py * Tile.VoxelSizeY / 128.0;
-            var nz = pz * Tile.VoxelSizeZ / 128.0;
+            var nxyz = pxz * VectorUtils.XZ(Tile.VoxelSize) / 2048.0f;
 
-            var hx = nx / 2;
-            var hz = nz / 2;
-            var sx = nx *8;
-            var sz = nz *8;
+            var hxyz = nxyz / 2;
+            var sxyz = nxyz * 7;
+            var rxyz = nxyz / 3;
+            var fxyz = nxyz * 63;
 
-            var rx = nx / 3;
-            var rz = nz / 3;
+            int yOffset;
+            GetCliff(out yOffset, sxyz);
 
-            var ph = PerlinHeight.Noise(hx, hz, 2);
-            var height = HeightCurve(ph);
+            var rh = PerlinRoughness.Noise(rxyz.X, rxyz.Y, 2);
+            roughness = rh; // RoughnessCurve(rh);
 
-            var sh = PerlinHeight.Noise(sx, sz, 2);
-            var sharpness = SharpnessCurve(ph) * (1+0.25*sh);
+            var sh = PerlinSharpness.Noise(sxyz.X, sxyz.Y, 2);
+            var fh = PerlinSharpness.Noise(fxyz.X, fxyz.Y, 2);
+            var ash = (1 / (1+Math.Exp(sh*4))) - 0.5;
+            var ph = PerlinHeight.Noise(hxyz.X, hxyz.Y, 5, 1.5 + 0.5 * ash);
+            var phc = HeightCurve(ph);
+            var height = phc - Math.Abs(fh) * 0.1 * Math.Max(0, Math.Min(1, phc * 0.25));
 
-            var rh = PerlinRoughness.Noise(rx, rz, 2);
-            var roughness = RoughnessCurve(rh);
+            roughness += height * 0.25;
 
-            var baseHeight = Average + Range * 0.15 * height * sharpness;
+            var baseHeight = Average + Range * 0.35 * height + roughness * Math.Pow(yOffset/20.0,2)*20;
 
-            var bottom = baseHeight - Range;
-            var top = baseHeight + Range;
-
-            var baseDensity = 0.5 - Math.Max(0, Math.Min((double) 1, (py - bottom) / (top - bottom)));
-
-            var noise = PerlinDensity.Noise(nx, ny, nz, 4);
-
-            return 0.1f * roughness * noise + baseDensity;
+            bottom = baseHeight - Range * 0.5;
+            top = baseHeight + Range * 0.5;
         }
 
-        private double HeightCurve(double initial)
-        {//1.3*x^5 - 0.55*x^3 + 0.15*x
-            double powered3 = Math.Pow(initial, 3);
-            double powered5 = Math.Pow(initial, 5);
-            double powered = 1.3 * powered5 - 0.55 * powered3 + 0.15 * initial;
-            return powered;
+        private void GetCliff(out int yOffset, Vector2 sxyz)
+        {
+            var y0 = PerlinOffset.Noise(sxyz.X, sxyz.Y, 5);
+            var y1 = PerlinOffset.Noise(-sxyz.Y, sxyz.X, 5);
+            var o0 = (int)(y0 * 29);
+            var o1 = (((int)(y1 * 30) - 5) & o0);
+            yOffset = Math.Max(0, o1 - o0);
+        }
+
+        public void GetTopologyAt1(Vector2I pxz, out double roughness, out double bottom, out double top, out int yOffset)
+        {
+            var nxyz = pxz * VectorUtils.XZ(Tile.VoxelSize) / 2048.0f;
+
+            var hxyz = nxyz / 2;
+            var sxyz = nxyz * 7;
+            var fxyz = nxyz * 63;
+            
+            yOffset = 0;
+            roughness = 0;
+
+            var ph = PerlinHeight.Noise(hxyz.X, hxyz.Y, 5, 1.5);
+            var phc = HeightCurve(ph);
+            var height = phc;
+
+            roughness += height * 0.25;
+
+            var baseHeight = Average + Range * 0.35 * height;
+
+            bottom = baseHeight - Range * 0.5;
+            top = baseHeight + Range * 0.5;
+        }
+
+        public double GetDensityAt(Vector3I pxyz, double roughness, double bottom, double top)
+        {
+            var baseDensity = 0.5 - Math.Max(0, Math.Min(1, (pxyz.Y - bottom) / (top - bottom)));
+
+            var nxyz = pxyz * Tile.VoxelSize / 128.0f;
+
+            var noise = 0.15 * PerlinDensity.Noise(nxyz.X, nxyz.Y, nxyz.Z, 4);
+
+            return roughness * noise + baseDensity;
+        }
+
+        private double HeightCurve(double inp)
+        {
+            //0.3*x+0.7*x^3+0.065*sin(x*2*3.141592)
+            return 0.3 * inp + 0.7 * Math.Pow(inp, 3) + 0.065 * Math.Sin(inp * 2 * Math.PI);
         }
 
         private double SharpnessCurve(double initial)
         {
-            return Math.Pow(initial, 8);
+            return Math.Abs(Math.Pow(initial, 3));
         }
 
         private double RoughnessCurve(double initial)

@@ -5,10 +5,11 @@ namespace VoxelWorldEngine.Objects
 {
     public class RenderQueue : RegistrableObject<RenderQueue>
     {
-        public static bool Touched { get; private set; }
-        public static void Touch()
+        public static GenericRegistry<RenderQueue> Registry { get; private set; }
+        public static void Initialize()
         {
-            Touched = true;
+            Registry = RegistryManager.GetRegistry<RenderQueue>();
+            Registry.Map();
         }
 
         public static readonly RenderQueue

@@ -1,7 +1,8 @@
 using System;
 using Microsoft.Xna.Framework;
+using VoxelWorldEngine.Util;
 
-namespace VoxelWorldEngine.Util
+namespace VoxelWorldEngine.Maths
 {
     public struct Vector3D
     {
@@ -18,8 +19,8 @@ namespace VoxelWorldEngine.Util
             Z = z;
         }
 
-        public double SqrMagnitude => X * X + Y * Y + Z * Z;
-        public double Magnitude => Math.Sqrt(SqrMagnitude);
+        public double LengthSquared() => X * X + Y * Y + Z * Z;
+        public double Length() => Math.Sqrt(LengthSquared());
 
         public double Dot(double x, double y, double z)
         {
@@ -36,8 +37,7 @@ namespace VoxelWorldEngine.Util
             return new Vector3D(
                 a.X - b.X,
                 a.Y - b.Y,
-                a.Z - b.Z
-                );
+                a.Z - b.Z);
         }
 
         public static Vector3D operator +(Vector3D a, Vector3D b)
@@ -45,8 +45,7 @@ namespace VoxelWorldEngine.Util
             return new Vector3D(
                 a.X + b.X,
                 a.Y + b.Y,
-                a.Z + b.Z
-                );
+                a.Z + b.Z);
         }
 
         public static Vector3D operator *(Vector3D a, Vector3D b)
@@ -54,8 +53,15 @@ namespace VoxelWorldEngine.Util
             return new Vector3D(
                 a.X * b.X,
                 a.Y * b.Y,
-                a.Z * b.Z
-                );
+                a.Z * b.Z);
+        }
+
+        public static Vector3D operator /(Vector3D a, Vector3D b)
+        {
+            return new Vector3D(
+                a.X / b.X,
+                a.Y / b.Y,
+                a.Z / b.Z);
         }
 
         public static implicit operator Vector3D(Vector3 vec)
@@ -63,8 +69,7 @@ namespace VoxelWorldEngine.Util
             return new Vector3D(
                 vec.X,
                 vec.Y,
-                vec.Z
-                );
+                vec.Z);
         }
 
         public static implicit operator Vector3D(Vector3I vec)
@@ -72,8 +77,7 @@ namespace VoxelWorldEngine.Util
             return new Vector3D(
                 vec.X,
                 vec.Y,
-                vec.Z
-                );
+                vec.Z);
         }
 
         public static implicit operator Vector3D(double n)
@@ -86,8 +90,7 @@ namespace VoxelWorldEngine.Util
             return new Vector3(
                 (float)vec.X,
                 (float)vec.Y,
-                (float)vec.Z
-                );
+                (float)vec.Z);
         }
     }
 }

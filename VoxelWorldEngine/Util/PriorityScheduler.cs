@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Threading;
+using VoxelWorldEngine.Maths;
 
 namespace VoxelWorldEngine.Util
 {
@@ -17,16 +18,16 @@ namespace VoxelWorldEngine.Util
         public int MaximumConcurrencyLevel { get; set; } = Math.Max(1, Environment.ProcessorCount - 1);
         public int QueuedTaskCount => _tasks.Count;
 
-        Vector3D _lastPlayerPosition;
+        EntityPosition _lastPlayerPosition;
 
         int before = Environment.TickCount;
 
-        public void SetPlayerPosition(Vector3D newPosition)
+        public void SetPlayerPosition(EntityPosition newPosition)
         {
-            var difference = newPosition - _lastPlayerPosition;
-            var distance = difference.SqrMagnitude;
+            var difference = newPosition.RelativeTo(_lastPlayerPosition);
+            var distance = difference.Length();
 
-            if (distance > 5 && (Environment.TickCount - before) >= 1000)
+            if (distance > 5 && Environment.TickCount - before >= 1000)
             {
                 _lockTasks.EnterWriteLock();
                 {
@@ -179,7 +180,7 @@ namespace VoxelWorldEngine.Util
             }
         }
 
-        public static PositionedTask StartNew(Action action, Vector3D position)
+        public static PositionedTask StartNew(Action action, EntityPosition position)
         {
             var t = new PositionedTask(action, position);
             Instance.QueueTask(t);
@@ -188,13 +189,13 @@ namespace VoxelWorldEngine.Util
 
         public class PositionedTask
         {
-            public Vector3D Position { get; set; }
+            public EntityPosition Position { get; set; }
 
             public Action Action { get; }
 
             public PositionedTask Continuation { get; set; }
 
-            public PositionedTask(Action action, Vector3D position)
+            public PositionedTask(Action action, EntityPosition position)
             {
                 Action = action;
                 Position = position;
@@ -206,9 +207,9 @@ namespace VoxelWorldEngine.Util
             }
 
             int lastScore = -1;
-            public int Score(Vector3D vector3D)
+            public int Score(EntityPosition other)
             {
-                lastScore = (int)Math.Round(((vector3D - Position) * new Vector3D(1,0.25,1)).Magnitude);
+                lastScore = (int)Math.Round(other.RelativeTo(Position).LengthSquared());
                 return lastScore;
             }
 

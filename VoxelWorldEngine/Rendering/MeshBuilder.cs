@@ -1,49 +1,20 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Security;
 using Microsoft.Xna.Framework;
-using Microsoft.Xna.Framework.Graphics;
 using VoxelWorldEngine.Objects;
+using VoxelWorldEngine.Terrain.Graphics;
 
 namespace VoxelWorldEngine.Rendering
 {
-    class VertexCollectorManager
+    internal class MeshBuilder
     {
-        public readonly Dictionary<RenderQueue, MeshBuilder> Collectors = new Dictionary<RenderQueue, MeshBuilder>();
-
-        public MeshBuilder Get(RenderQueue queue)
-        {
-            MeshBuilder collector;
-            if (!Collectors.TryGetValue(queue, out collector))
-            {
-                collector = new MeshBuilder(queue);
-                Collectors.Add(queue, collector);
-            }
-            return collector;
-        }
-
-        public void Clear()
-        {
-            foreach(var collector in Collectors.Values)
-                collector.Clear();
-        }
-    }
-
-    class MeshBuilder
-    {
-        private VertexFormats.PosColorTexNormal[] _vertices = new VertexFormats.PosColorTexNormal[10000];
-        private int[] _indices = new int[10000];
+        private VertexFormats.PosColorTexNormal[] _vertices;
+        private int[] _indices;
 
         int _vertexCount;
         int _indexCount;
 
-        public RenderQueue Queue { get; }
+        public RenderQueue Queue { get; set; }
         public int IndexCount => _indexCount;
-
-        public MeshBuilder(RenderQueue queue)
-        {
-            Queue = queue;
-        }
 
         public void Clear()
         {
@@ -51,20 +22,24 @@ namespace VoxelWorldEngine.Rendering
             _indexCount = 0;
         }
 
-        public Mesh Build(Game game)
+        public TileMesh Build(Game game)
         {
             if (_vertexCount > 0 && _indexCount > 0)
             {
-                return new Mesh(game, Queue, _vertices, _vertexCount, _indices, _indexCount);
+                return new TileMesh(game, Queue, _vertices, _vertexCount, _indices, _indexCount);
             }
             return null;
         }
 
         private void AddVertex(VertexFormats.PosColorTexNormal vertex)
         {
-            if (_vertexCount == _vertices.Length)
+            if (_vertices == null)
             {
-                Array.Resize(ref _vertices, _vertices.Length + 10000);
+                _vertices = new VertexFormats.PosColorTexNormal[1000];
+            }
+            else if (_vertexCount == _vertices.Length)
+            {
+                Array.Resize(ref _vertices, _vertices.Length + 1000);
             }
 
             _vertices[_vertexCount++] = vertex;
@@ -72,9 +47,13 @@ namespace VoxelWorldEngine.Rendering
 
         private void AddIndex(int index)
         {
-            if (_indexCount == _indices.Length)
+            if (_indices == null)
             {
-                Array.Resize(ref _indices, _indices.Length + 10000);
+                _indices = new int[1000];
+            }
+            else if (_indexCount == _indices.Length)
+            {
+                Array.Resize(ref _indices, _indices.Length + 1000);
             }
 
             _indices[_indexCount++] = index;

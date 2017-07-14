@@ -5,10 +5,11 @@ namespace VoxelWorldEngine.Objects
 {
     public class RenderingMaterial : RegistrableObject<RenderingMaterial>
     {
-        public static bool Touched { get; private set; }
-        public static void Touch()
+        public static GenericRegistry<RenderingMaterial> Registry { get; private set; }
+        public static void Initialize()
         {
-            Touched = true;
+            Registry = RegistryManager.GetRegistry<RenderingMaterial>();
+            Registry.Map();
         }
 
         public static readonly RenderingMaterial

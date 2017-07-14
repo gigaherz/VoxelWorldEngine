@@ -1,4 +1,4 @@
-namespace VoxelWorldEngine.Util
+namespace VoxelWorldEngine.Maths
 {
     public struct Vector2D
     {

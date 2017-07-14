@@ -9,13 +9,11 @@ namespace VoxelWorldEngine.Rendering
         [StructLayout(LayoutKind.Sequential, Pack = 1)]
         public struct PosColorTexNormal : IVertexType
         {
-            public static readonly VertexDeclaration VertexDeclaration = new VertexDeclaration(new []
-            {
-                  new VertexElement(0, VertexElementFormat.Vector3, VertexElementUsage.Position, 0),
-                  new VertexElement(12, VertexElementFormat.Color, VertexElementUsage.Color, 0),
-                  new VertexElement(16, VertexElementFormat.Vector2, VertexElementUsage.TextureCoordinate, 0),
-                  new VertexElement(24, VertexElementFormat.Vector3, VertexElementUsage.Normal, 0)
-            });
+            public static readonly VertexDeclaration VertexDeclaration = new VertexDeclaration(
+                new VertexElement(0, VertexElementFormat.Vector3, VertexElementUsage.Position, 0), 
+                new VertexElement(12, VertexElementFormat.Color, VertexElementUsage.Color, 0), 
+                new VertexElement(16, VertexElementFormat.Vector2, VertexElementUsage.TextureCoordinate, 0),
+                new VertexElement(24, VertexElementFormat.Vector3, VertexElementUsage.Normal, 0));
 
             public Vector3 Position;
             public Color Color;

@@ -5,10 +5,11 @@ namespace VoxelWorldEngine.Objects
 {
     public class Block : RegistrableObject<Block>
     {
-        public static bool Touched { get; private set; }
-        public static void Touch()
+        public static GenericRegistry<Block> Registry { get; private set; }
+        public static void Initialize()
         {
-            Touched = true;
+            Registry = RegistryManager.GetRegistry<Block>();
+            Registry.Map();
         }
 
         // Empty/gas blocks

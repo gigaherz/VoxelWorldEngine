@@ -1,13 +1,15 @@
+using System.CodeDom;
 using VoxelWorldEngine.Registry;
 
 namespace VoxelWorldEngine.Objects
 {
     public class PhysicsMaterial : RegistrableObject<PhysicsMaterial>
     {
-        public static bool Touched { get; private set; }
-        public static void Touch()
+        public static GenericRegistry<PhysicsMaterial> Registry { get; private set; }
+        public static void Initialize()
         {
-            Touched = true;
+            Registry = RegistryManager.GetRegistry<PhysicsMaterial>();
+            Registry.Map();
         }
 
         public static readonly PhysicsMaterial

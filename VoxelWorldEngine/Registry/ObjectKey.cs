@@ -6,7 +6,7 @@ namespace VoxelWorldEngine.Registry
     {
         public string Domain { get; }
         public string Name { get; }
-        public int? InternalId { get; set; }
+        public ushort? InternalId { get; set; }
 
         public ObjectKey(string domain, string name)
         {

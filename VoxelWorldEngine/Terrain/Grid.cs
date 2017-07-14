@@ -4,31 +4,38 @@ using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using Microsoft.Xna.Framework;
+using Microsoft.Xna.Framework.Graphics;
+using VoxelWorldEngine.Maths;
 using VoxelWorldEngine.Objects;
 using VoxelWorldEngine.Registry;
+using VoxelWorldEngine.Rendering;
 using VoxelWorldEngine.Util;
 
 namespace VoxelWorldEngine.Terrain
 {
-    public class Grid : DrawableGameComponent
+    public class Grid : GameComponent, IRenderableProvider
     {
         public static int MaxTilesInProgress = PriorityScheduler.Instance.MaximumConcurrencyLevel * 2;
         public static int MaxTilesQueued = MaxTilesInProgress;
-        public static int LoadRange = 18;
-        public static int UnloadRange = 32;
+        public static int LoadRadius = 512;
+        public static int UnloadRadius = 600;
+        public static int LoadRange = LoadRadius / Tile.GridSize.X;
+        public static int UnloadRange = UnloadRadius / Tile.GridSize.X;
+        public static Vector3 LoadScale = new Vector3(1,1,1) / Tile.VoxelSize;
 
-        private readonly OcTree<Tile> _tiles = new OcTree<Tile>();
+        private readonly CubeTree<Tile> _tiles = new CubeTree<Tile>();
 
-        private readonly List<Tile> _pendingTiles = new List<Tile>();
+        private readonly HashSet<Tile> _pendingTilesSet = new HashSet<Tile>();
+        private readonly List<Tile> _pendingTilesList = new List<Tile>();
 
         private readonly ReaderWriterLockSlim _tilesLock = new ReaderWriterLockSlim();
         public HashSet<Tile> UnorderedTiles { get; } = new HashSet<Tile>();
 
-        public int PendingTiles => _pendingTiles.Count;
+        public int PendingTiles => _pendingTilesList.Count;
 
         public int TilesInProgress { get; set; }
 
-        public Vector3I SpawnPosition { get; set; }
+        public EntityPosition SpawnPosition { get; set; }
 
         public Random Random { get; }
 
@@ -40,104 +47,120 @@ namespace VoxelWorldEngine.Terrain
             Random = new Random(GenerationContext.Seed);
         }
 
-        Vector3D _lastPlayerPosition;
+        EntityPosition _lastPlayerPosition;
 
         int before = Environment.TickCount;
 
         bool bootstrap = true;
-        public void SetPlayerPosition(Vector3D newPosition)
+        List<Vector3I> ul = new List<Vector3I>();
+        public void SetPlayerPosition(EntityPosition newPosition)
         {
-            var difference = newPosition - _lastPlayerPosition;
-            var distance = difference.Magnitude;
+            var difference = newPosition.RelativeTo(_lastPlayerPosition) * LoadScale;
+            var distance = difference.Length();
 
-            int tx = (int)Math.Floor(newPosition.X / Tile.SizeXZ);
-            int ty = (int)Math.Floor(newPosition.Y / Tile.SizeY);
-            int tz = (int)Math.Floor(newPosition.Z / Tile.SizeXZ);
-            var tp = new Vector3I(tx,ty,tz);
-            /*if (!ChunkExists(newPosition))
+            var tp = newPosition.BasePosition;
+            if (!ChunkExists(newPosition))
             {
                 bootstrap = true;
-            }*/
+            }
 
-            if (/*Environment.TickCount - before > 1000 && (distance > 5 || _pendingTiles.Count == 0 ||*/( bootstrap))
+            if (Environment.TickCount - before <= 1000 || (distance <= 5 && !bootstrap))
+                return;
+
+            Debug.WriteLine("Re-computing visible chunks...");
+
+            before = Environment.TickCount; 
+
+            bootstrap = false;
+
+            ul.Clear();
+
+            _tilesLock.EnterReadLock();
+            try
             {
-                Debug.WriteLine("Re-computing visible chunks...");
+                ul.AddRange(UnorderedTiles.Where(tile => Distance(newPosition, tile) > UnloadRadius).Select(t => t.Index));
+            }
+            finally
+            {
+                _tilesLock.ExitReadLock();
+            }
 
-                before = Environment.TickCount; 
+            Debug.WriteLine($"Discarding {ul.Count} tiles...");
+            foreach (var tile in ul)
+            {
+                SetTile(tile, null);
+            }
 
-                bootstrap = false;
+            ul.Clear();
+            _pendingTilesSet.Clear();
+            _pendingTilesList.Clear();
 
-                List<Tile> ul;
-
-                _tilesLock.EnterReadLock();
-                try
+            //for (int r = 0; r < LoadRange; r++)
+            var r = LoadRange;
+            {
+                for (int z = -r; z <= r; z++)
                 {
-                    ul = UnorderedTiles.Where(tile => (tile.Centroid - newPosition).Magnitude > UnloadRange * Tile.SizeXZ).ToList();
-                }
-                finally
-                {
-                    _tilesLock.ExitReadLock();
-                }
-
-                foreach (var tile in ul)
-                {
-                    SetTile(tile.IndexX, tile.IndexY, tile.IndexZ, null);
-                }
-                
-                var fOffY = GenerationContext.Floor / Tile.SizeY - tp.Y;
-                var cOffY = GenerationContext.Ceiling / Tile.SizeY - tp.Y;
-                for (int r = 0; r < LoadRange; r++)
-                {
-                    for (int z = -r; z <= r; z++)
+                    for (int x = -r; x <= r; x++)
                     {
-                        for (int x = -r; x <= r; x++)
+                        for (int y = -r; y <= r; y++)
                         {
-                            for (int y = Math.Max(fOffY, -r * Tile.SizeY / Tile.SizeXZ); y < Math.Min(cOffY, r * Tile.SizeY / Tile.SizeXZ); y++)
+                            if (!((new Vector3D(x,y,z) * LoadScale).Length() <= LoadRange))
+                                continue;
+
+                            var tpo = tp.Offset(x,y,z);
+                            if (ul.Contains(tpo))
+                                continue;
+
+                            Tile tile;
+                            if (!Find(tpo, out tile))
                             {
-                                if (!(Math.Sqrt(x*x + y*y + z*z) <= LoadRange))
-                                    continue;
+                                tile = new Tile(this, tpo);
 
-                                int tpx = tp.X + x;
-                                int tpy = tp.Y + y;
-                                int tpz = tp.Z + z;
-
-                                Tile tile;
-                                if (Find(tpx, tpy, tpz, out tile))
-                                    continue;
-
-                                tile = new Tile(this, tpx, tpy, tpz);
-                                        
-                                SetTile(tpx, tpy, tpz, tile);
-                                _pendingTiles.Add(tile);
+                                SetTile(tpo, tile);
                             }
+
+                            if (tile.GenerationPhase<1)
+                                QueueTile(tile);
                         }
                     }
-                    //if (_pendingTiles.Count >= MaxTilesQueued)
-                    //    break;
                 }
-
-                ResortPending(newPosition);
-
-                _lastPlayerPosition = newPosition;
+                //if (_pendingTiles.Count >= MaxTilesQueued)
+                //    break;
             }
+
+            _lastPlayerPosition = newPosition;
+
+            ResortPending();
         }
 
-        private void ResortPending(Vector3D newPosition)
+        private static float Distance(EntityPosition newPosition, Tile tile)
         {
-            Func<Vector3D, double> valueFunc = a => (a - newPosition).SqrMagnitude;
-            _pendingTiles.Sort((a, b) => Math.Sign(valueFunc(b.Centroid) - valueFunc(a.Centroid)));
+            return (tile.Centroid.RelativeTo(newPosition) * LoadScale).Length();
         }
 
-        private void SetTile(int x, int y, int z, Tile tile)
+        private double RelativeToPlayer(EntityPosition centroid)
         {
-            var previous = _tiles.SetValue(x, y, z, tile);
+            return _lastPlayerPosition.RelativeTo(centroid).LengthSquared();
+        }
+
+        private void ResortPending()
+        {
+            _pendingTilesList.Sort((a, b) => Math.Sign(RelativeToPlayer(b.Centroid) - RelativeToPlayer(a.Centroid)));
+        }
+
+        private void SetTile(Vector3I index, Tile tile)
+        {
+            var previous = _tiles.SetValue(index.X, index.Y, index.Z, tile);
             if (previous != tile)
             {
                 _tilesLock.EnterWriteLock();
                 try
                 {
                     if (previous != null)
+                    {
                         UnorderedTiles.Remove(previous);
+                        previous.Dispose();
+                    }
                     if (tile != null)
                         UnorderedTiles.Add(tile);
                 }
@@ -148,151 +171,133 @@ namespace VoxelWorldEngine.Terrain
             }
         }
 
-        public bool Find(int x, int y, int z, out Tile tile)
+        public bool Find(Vector3I pos, out Tile tile)
         {
-            return _tiles.TryGetValue(x, y, z, out tile);
+            return _tiles.TryGetValue(pos.X, pos.Y, pos.Z, out tile);
         }
 
-        public bool Require(int x, int y, int z, out Tile tile)
+        public bool Require(Vector3I index, int phase, out Tile tile)
         {
-            tile = null;
-            if (y < (GenerationContext.Floor / Tile.SizeY) || y >= (GenerationContext.Ceiling / Tile.SizeY))
-                return false;
-            if (!Find(x, y, z, out tile))
+            if (!Find(index, out tile))
             {
-                tile = new Tile(this, x, y, z);
-                SetTile(x, y, z, tile);
+                tile = new Tile(this, index);
+                SetTile(index, tile);
             }
             ForceTile(tile);
+            tile.RequirePhase(phase);
             return true;
         }
 
-        //Tile lastQueried;
-        private Tile GetTileCoords(ref int x, ref int y, ref int z)
+        private Tile GetTileCoords(ref Vector3I xyz)
         {
-            int px = (int)Math.Floor(x / (double)Tile.SizeXZ);
-            int py = (int)Math.Floor(y / (double)Tile.SizeY);
-            int pz = (int)Math.Floor(z / (double)Tile.SizeXZ);
+            var oo = xyz & (Tile.GridSize - 1);
+            var pp = xyz - oo;
 
-            /*var tile = lastQueried;
-            if (tile != null &&
-                tile.IndexX == px &&
-                tile.IndexY == py &&
-                tile.IndexZ == pz)
-            {
-                Debug.Assert(x - tile.OffX >= 0 && x - tile.OffX < Tile.SizeXZ);
-                Debug.Assert(y - tile.OffY >= 0 && y - tile.OffY < Tile.SizeY);
-                Debug.Assert(z - tile.OffZ >= 0 && z - tile.OffZ < Tile.SizeXZ);
-                x -= tile.OffX;
-                y -= tile.OffY;
-                z -= tile.OffZ;
-                return tile;
-            }*/
+            var pxyz = pp / Tile.GridSize;
 
             Tile tile;
-
-            if (Find(px, py, pz, out tile))
+            if (Find(pxyz, out tile))
             {
-                x -= tile.OffX;
-                y -= tile.OffY;
-                z -= tile.OffZ;
-                Debug.Assert(x >= 0 && x < Tile.SizeXZ);
-                Debug.Assert(y >= 0 && y < Tile.SizeY);
-                Debug.Assert(z >= 0 && z < Tile.SizeXZ);
-                //Interlocked.Exchange(ref lastQueried, tile);
+                xyz = oo;
                 return tile;
             }
 
             return null;
         }
 
-        public int GetSolidTop(int x, int y, int z)
+        public int GetSolidTop(Vector3I xyz)
         {
             // TODO: Support more than one tile in height!
 
-            var tile = GetTileCoords(ref x, ref y, ref z);
+            var tile = GetTileCoords(ref xyz);
             if (tile != null)
             {
-                int top = tile.GetSolidTop(x, z);
+                int top = tile.GetSolidTop(xyz);
 
-                while(top == (Tile.SizeY-1))
+                while(top == (Tile.GridSize.Y-1))
                 {
-                    if (!Find(x, ++y, z, out tile))
+                    xyz.Y++;
+                    if (!Find(xyz, out tile))
                         return top;
 
-                    top = tile.GetSolidTop(x, z);
+                    top = tile.GetSolidTop(xyz);
                 }
             }
             return -1;
         }
 
-        public Block GetBlock(int x, int y, int z, bool load = true)
+        public Block GetBlock(Vector3I xyz, bool load = true)
         {
-            var tile = GetTileCoords(ref x, ref y, ref z);
-            return tile?.GetBlock(x,y,z) ?? Block.Air;
+            var tile = GetTileCoords(ref xyz);
+            return tile?.GetBlock(xyz) ?? Block.Air;
         }
 
-        public void SetBlock(int x, int y, int z, Block block)
+        public void SetBlock(Vector3I xyz, Block block)
         {
-            var tile = GetTileCoords(ref x, ref y, ref z);
-            tile?.SetBlock(x, y, z, block);
+            var tile = GetTileCoords(ref xyz);
+            tile?.SetBlock(xyz, block);
         }
         
-        public int FindGround(int x, int y, int z)
+        public int FindGround(Vector3I xyz)
         {
-            if (GetBlock(x, y, z).PhysicsMaterial.IsSolid)
+            int seekLimit = 256;
+            if (GetBlock(xyz).PhysicsMaterial.IsSolid)
             {
-                while (GetBlock(x, y + 1, z).PhysicsMaterial.IsSolid)
-                    y++;
+                while (GetBlock(xyz.Offset(0,1,0)).PhysicsMaterial.IsSolid)
+                    xyz.Y++;
             }
             else
             {
-                while (y > GenerationContext.Floor && !GetBlock(x, y, z).PhysicsMaterial.IsSolid)
-                    y--;
+                while (seekLimit-- > 0 && !GetBlock(xyz).PhysicsMaterial.IsSolid)
+                    xyz.Y--;
             }
-            return y;
+            return xyz.Y;
         }
 
         internal void FindSpawnPosition()
         {
-            int x = 0;
-            int y = 0;
-            int z = 0;
+            Vector3I xyz;
             int range = 100;
+            int seekLimit = 256;
 
             do
             {
                 var a = Random.NextDouble() * Math.PI * 2;
-                x = (int)(range * Math.Cos(a));
-                z = (int)(range * Math.Sin(a));
-                y = GenerationContext.WaterLevel;
+                xyz = new Vector3I(
+                    (int)(range * Math.Cos(a)),
+                    GenerationContext.WaterLevel,
+                    (int)(range * Math.Sin(a)));
 
-                if (GenerationContext.GetDensityAt(x, y, z) < 0)
+                double roughness, bottom, top;
+
+                GenerationContext.GetTopologyAt(xyz.XZ, out roughness, out bottom, out top);
+
+                if (GenerationContext.GetDensityAt(xyz, roughness, bottom, top) < 0)
                 {
                     range += 5;
                     // try again
                     continue;
                 }
 
-                while (y < GenerationContext.Ceiling)
+                while (seekLimit-- > 0)
                 {
-                    if (GenerationContext.GetDensityAt(x, y++, z) >= 0)
+                    if (GenerationContext.GetDensityAt(xyz.Postincrement(0,1,0), roughness, bottom, top) >= 0)
                     {
                         continue;
                     }
-                    if (GenerationContext.GetDensityAt(x, y++, z) >= 0)
+                    if (GenerationContext.GetDensityAt(xyz.Postincrement(0, 1, 0), roughness, bottom, top) >= 0)
                     {
                         continue;
                     }
-                    if (GenerationContext.GetDensityAt(x, y++, z) >= 0)
+                    if (GenerationContext.GetDensityAt(xyz.Postincrement(0, 1, 0), roughness, bottom, top) >= 0)
                     {
                         continue;
                     }
-                    if (GenerationContext.GetDensityAt(x, y++, z) < 0)
+                    if (GenerationContext.GetDensityAt(xyz.Postincrement(0, 1, 0), roughness, bottom, top) < 0)
                         break;
                 }
 
-                if (y < GenerationContext.Ceiling)
+                if (seekLimit <= 0)
                     break;
 
                 range += 5;
@@ -300,7 +305,12 @@ namespace VoxelWorldEngine.Terrain
 
             } while (true);
 
-            SpawnPosition = new Vector3I(x,y-4,z);
+            if (seekLimit <= 0)
+            {
+                // TODO: Build spawn platform
+            }
+
+            SpawnPosition = EntityPosition.FromGrid(xyz.Offset(0,-3,0));
         }
 
         private void ForceTile(Tile tile)
@@ -309,19 +319,19 @@ namespace VoxelWorldEngine.Terrain
                 tile.Initialize();
         }
 
-        public bool ChunkExists(Vector3D playerPosition)
+        public bool ChunkExists(EntityPosition playerPosition)
         {
-            int px = (int)Math.Floor(playerPosition.X / Tile.SizeXZ);
-            int py = (int)Math.Floor(playerPosition.Y / Tile.SizeY);
-            int pz = (int)Math.Floor(playerPosition.Z / Tile.SizeXZ);
-
             Tile tile;
-            return Find(px, py, pz, out tile);
+            return Find(playerPosition.BasePosition, out tile) && tile.GenerationPhase >= 0;
         }
 
         public void QueueTile(Tile tile)
         {
-            _pendingTiles.Add(tile);
+            if (!_pendingTilesSet.Contains(tile))
+            {
+                _pendingTilesSet.Add(tile);
+                _pendingTilesList.Add(tile);
+            }
         }
 
         public override void Initialize()
@@ -335,11 +345,12 @@ namespace VoxelWorldEngine.Terrain
 
         public override void Update(GameTime gameTime)
         {
-            while (TilesInProgress < 10 && _pendingTiles.Count > 0)
+            while (TilesInProgress < 10 && _pendingTilesList.Count > 0)
             {
-                var tile = _pendingTiles[_pendingTiles.Count-1];
-                _pendingTiles.RemoveAt(_pendingTiles.Count-1);
-
+                var tile = _pendingTilesList[_pendingTilesList.Count-1];
+                _pendingTilesList.RemoveAt(_pendingTilesList.Count-1);
+                _pendingTilesSet.Remove(tile);
+                tile.RequirePhase(1);
                 ForceTile(tile);
             }
 
@@ -362,37 +373,44 @@ namespace VoxelWorldEngine.Terrain
             base.Update(gameTime);
         }
 
-        public override void Draw(GameTime gameTime)
+        class QueueRenderable : IRenderable
+        {
+            private readonly RenderQueue queue;
+            private readonly Grid grid;
+
+            public QueueRenderable(Grid grid, RenderQueue queue)
+            {
+                this.queue = queue;
+                this.grid = grid;
+            }
+
+            public void Draw(GameTime gameTime, BaseCamera camera)
+            {
+                camera.GraphicsDevice.BlendState = queue.BlendState;
+                camera.GraphicsDevice.RasterizerState = queue.RasterizerState;
+                camera.GraphicsDevice.DepthStencilState = queue.DepthStencilState;
+
+                grid._tilesLock.EnterReadLock();
+                try
+                {
+                    foreach (var tile in grid.UnorderedTiles)
+                    {
+                        tile.Graphics.Draw(gameTime, camera, queue);
+                    }
+                }
+                finally
+                {
+                    grid._tilesLock.ExitReadLock();
+                }
+            }
+        }
+
+        public IEnumerable<IRenderable> GetRenderables()
         {
             foreach (var queue in RegistryManager.GetRegistry<RenderQueue>().Values)
             {
-                var vgame = (VoxelGame)Game;
-
-                foreach (var pass in vgame.TerrainDrawEffect.Techniques[0].Passes)
-                {
-                    pass.Apply();
-                    GraphicsDevice.Textures[0] = vgame.TerrainTexture;
-                    GraphicsDevice.BlendState = queue.BlendState;
-                    GraphicsDevice.RasterizerState = queue.RasterizerState;
-                    GraphicsDevice.DepthStencilState = queue.DepthStencilState;
-
-                    _tilesLock.EnterReadLock();
-                    try
-                    {
-                        foreach (var tile in UnorderedTiles)
-                        {
-                            tile.Graphics.Draw(gameTime, queue);
-                        }
-                    }
-                    finally
-                    {
-                        _tilesLock.ExitReadLock();
-                    }
-                }
-
+                yield return new QueueRenderable(this, queue);
             }
-
-            base.Draw(gameTime);
         }
     }
 }

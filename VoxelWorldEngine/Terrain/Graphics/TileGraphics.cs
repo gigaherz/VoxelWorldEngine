@@ -1,18 +1,14 @@
-﻿using System;
-using System.Collections.Concurrent;
+﻿using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
-using System.Text;
 using System.Threading;
-using System.Threading.Tasks;
 using Microsoft.Xna.Framework;
-using Microsoft.Xna.Framework.Input;
+using VoxelWorldEngine.Maths;
 using VoxelWorldEngine.Objects;
 using VoxelWorldEngine.Rendering;
-using VoxelWorldEngine.Util;
 
-namespace VoxelWorldEngine.Terrain
+namespace VoxelWorldEngine.Terrain.Graphics
 {
     public class TileGraphics : DrawableGameComponent
     {
@@ -27,16 +23,23 @@ namespace VoxelWorldEngine.Terrain
 
         private readonly ConcurrentQueue<List<MeshBuilder>> _builders = new ConcurrentQueue<List<MeshBuilder>>();
 
-        private readonly VertexCollectorManager _collectorManager = new VertexCollectorManager();
+        private readonly MeshBuilderManager _collectorManager = new MeshBuilderManager();
 
         private const int Ambient = 8; // the bigger this number, the lesser the AO effect
 
-        public HashSet<Mesh> Meshes { get; } = new HashSet<Mesh>();
+        public HashSet<TileMesh> Meshes { get; } = new HashSet<TileMesh>();
 
         private readonly Stopwatch stopwatch = new Stopwatch();
 
-        private Vector3 Offset;
-        private Vector3 Scale;
+        protected override void Dispose(bool disposing)
+        {
+            base.Dispose(disposing);
+            foreach (var mesh in Meshes)
+            {
+                mesh.Dispose();
+            }
+            Meshes.Clear();
+        }
 
         public int Busy;
         public bool Rebuild()
@@ -49,10 +52,6 @@ namespace VoxelWorldEngine.Terrain
             if (Interlocked.Exchange(ref Busy, 1) != 0)
                 return false;
 
-            Offset = new Vector3(Tile.OffX * Tile.VoxelSizeX,
-                                 Tile.OffY * Tile.VoxelSizeY,
-                                 Tile.OffZ * Tile.VoxelSizeZ);
-            Scale = new Vector3(Tile.VoxelSizeX, Tile.VoxelSizeY, Tile.VoxelSizeZ);
 #if false
             stopwatch.Restart();
             GenMeshes();
@@ -92,25 +91,205 @@ namespace VoxelWorldEngine.Terrain
                 }
             }
             Interlocked.Exchange(ref Busy, 0);
+
+            _collectorManager.Clear();
         }
 
         public void GenMeshes()
         {
+            GenMeshesPlain();
+        }
+
+        public void GenMeshesPlain()
+        {
             _collectorManager.Clear();
-            
-            for (int z = 0; z < Tile.SizeXZ; z++)
+
+            for (int z = 0; z < Tile.GridSize.Z; z++)
             {
                 float pz = z + 0.5f;
 
-                for (int x = 0; x < Tile.SizeXZ; x++)
+                for (int x = 0; x < Tile.GridSize.X; x++)
                 {
                     float px = x + 0.5f;
 
-                    for (int y = 0; y < Tile.SizeY; y++)
+                    for (int y = 0; y < Tile.GridSize.Y; y++)
                     {
                         float py = y + 0.5f;
 
-                        var block = Tile.GetBlock(x, y, z);
+                        var block = Tile.GetBlock(new Vector3I(x, y, z));
+                        var queue = block.RenderingMaterial.RenderQueue;
+
+                        if (queue == RenderQueue.None)
+                            continue;
+
+                        bool s1 = ShowSide(x - 1, y, z, queue);
+                        bool s2 = ShowSide(x + 1, y, z, queue);
+                        bool s3 = ShowSide(x, y - 1, z, queue);
+                        bool s4 = ShowSide(x, y + 1, z, queue);
+                        bool s5 = ShowSide(x, y, z - 1, queue);
+                        bool s6 = ShowSide(x, y, z + 1, queue);
+
+                        if (s1)
+                        {
+                            var pos1 = new Vector3(px - 0.5f, py - 0.5f, pz - 0.5f);
+                            var pos2 = new Vector3(px - 0.5f, py - 0.5f, pz + 0.5f);
+                            var pos3 = new Vector3(px - 0.5f, py + 0.5f, pz + 0.5f);
+                            var pos4 = new Vector3(px - 0.5f, py + 0.5f, pz - 0.5f);
+
+                            var c1 = (int)((Ambient) * 255 / Ambient);
+                            var c2 = (int)((Ambient) * 255 / Ambient);
+                            var c3 = (int)((Ambient) * 255 / Ambient);
+                            var c4 = (int)((Ambient) * 255 / Ambient);
+
+                            var color1 = new Color(c1, c1, c1);
+                            var color2 = new Color(c2, c2, c2);
+                            var color3 = new Color(c3, c3, c3);
+                            var color4 = new Color(c4, c4, c4);
+
+                            AddFace(block.RenderingMaterial,
+                                pos1, pos2, pos3, pos4,
+                                color1, color2, color3, color4,
+                                new Vector3(-1, 0, 0));
+                        }
+
+                        if (s2)
+                        {
+                            var pos1 = new Vector3(px + 0.5f, py - 0.5f, pz + 0.5f);
+                            var pos2 = new Vector3(px + 0.5f, py - 0.5f, pz - 0.5f);
+                            var pos3 = new Vector3(px + 0.5f, py + 0.5f, pz - 0.5f);
+                            var pos4 = new Vector3(px + 0.5f, py + 0.5f, pz + 0.5f);
+
+                            var c1 = (int)((Ambient) * 255 / Ambient);
+                            var c2 = (int)((Ambient) * 255 / Ambient);
+                            var c3 = (int)((Ambient) * 255 / Ambient);
+                            var c4 = (int)((Ambient) * 255 / Ambient);
+
+                            var color1 = new Color(c1, c1, c1);
+                            var color2 = new Color(c2, c2, c2);
+                            var color3 = new Color(c3, c3, c3);
+                            var color4 = new Color(c4, c4, c4);
+
+                            AddFace(block.RenderingMaterial,
+                                pos1, pos2, pos3, pos4,
+                                color1, color2, color3, color4,
+                                new Vector3(1, 0, 0));
+                        }
+
+                        if (s3)
+                        {
+                            var pos1 = new Vector3(px - 0.5f, py - 0.5f, pz - 0.5f);
+                            var pos2 = new Vector3(px + 0.5f, py - 0.5f, pz - 0.5f);
+                            var pos3 = new Vector3(px + 0.5f, py - 0.5f, pz + 0.5f);
+                            var pos4 = new Vector3(px - 0.5f, py - 0.5f, pz + 0.5f);
+
+                            var c1 = (int)((Ambient) * 255 / Ambient);
+                            var c2 = (int)((Ambient) * 255 / Ambient);
+                            var c3 = (int)((Ambient) * 255 / Ambient);
+                            var c4 = (int)((Ambient) * 255 / Ambient);
+
+                            var color1 = new Color(c1, c1, c1);
+                            var color2 = new Color(c2, c2, c2);
+                            var color3 = new Color(c3, c3, c3);
+                            var color4 = new Color(c4, c4, c4);
+
+                            AddFace(block.RenderingMaterial,
+                                pos1, pos2, pos3, pos4,
+                                color1, color2, color3, color4,
+                                new Vector3(0, -1, 0));
+                        }
+
+                        if (s4)
+                        {
+                            var pos1 = new Vector3(px - 0.5f, py + 0.5f, pz + 0.5f);
+                            var pos2 = new Vector3(px + 0.5f, py + 0.5f, pz + 0.5f);
+                            var pos3 = new Vector3(px + 0.5f, py + 0.5f, pz - 0.5f);
+                            var pos4 = new Vector3(px - 0.5f, py + 0.5f, pz - 0.5f);
+
+                            var c1 = (int)((Ambient) * 255 / Ambient);
+                            var c2 = (int)((Ambient) * 255 / Ambient);
+                            var c3 = (int)((Ambient) * 255 / Ambient);
+                            var c4 = (int)((Ambient) * 255 / Ambient);
+
+                            var color1 = new Color(c1, c1, c1);
+                            var color2 = new Color(c2, c2, c2);
+                            var color3 = new Color(c3, c3, c3);
+                            var color4 = new Color(c4, c4, c4);
+
+                            AddFace(block.RenderingMaterial,
+                                pos1, pos2, pos3, pos4,
+                                color1, color2, color3, color4,
+                                new Vector3(0, 1, 0));
+                        }
+
+                        if (s5)
+                        {
+                            var pos1 = new Vector3(px + 0.5f, py - 0.5f, pz - 0.5f);
+                            var pos2 = new Vector3(px - 0.5f, py - 0.5f, pz - 0.5f);
+                            var pos3 = new Vector3(px - 0.5f, py + 0.5f, pz - 0.5f);
+                            var pos4 = new Vector3(px + 0.5f, py + 0.5f, pz - 0.5f);
+
+                            var c1 = (int)((Ambient) * 255 / Ambient);
+                            var c2 = (int)((Ambient) * 255 / Ambient);
+                            var c3 = (int)((Ambient) * 255 / Ambient);
+                            var c4 = (int)((Ambient) * 255 / Ambient);
+
+                            var color1 = new Color(c1, c1, c1);
+                            var color2 = new Color(c2, c2, c2);
+                            var color3 = new Color(c3, c3, c3);
+                            var color4 = new Color(c4, c4, c4);
+
+                            AddFace(block.RenderingMaterial,
+                                pos1, pos2, pos3, pos4,
+                                color1, color2, color3, color4,
+                                new Vector3(0, 0, -1));
+                        }
+
+                        if (s6)
+                        {
+                            var pos1 = new Vector3(px - 0.5f, py - 0.5f, pz + 0.5f);
+                            var pos2 = new Vector3(px + 0.5f, py - 0.5f, pz + 0.5f);
+                            var pos3 = new Vector3(px + 0.5f, py + 0.5f, pz + 0.5f);
+                            var pos4 = new Vector3(px - 0.5f, py + 0.5f, pz + 0.5f);
+
+                            var c1 = (int)((Ambient) * 255 / Ambient);
+                            var c2 = (int)((Ambient) * 255 / Ambient);
+                            var c3 = (int)((Ambient) * 255 / Ambient);
+                            var c4 = (int)((Ambient) * 255 / Ambient);
+
+                            var color1 = new Color(c1, c1, c1);
+                            var color2 = new Color(c2, c2, c2);
+                            var color3 = new Color(c3, c3, c3);
+                            var color4 = new Color(c4, c4, c4);
+
+                            AddFace(block.RenderingMaterial,
+                                pos1, pos2, pos3, pos4,
+                                color1, color2, color3, color4,
+                                new Vector3(0, 0, 1));
+                        }
+                    }
+                }
+            }
+
+            _builders.Enqueue(_collectorManager.Collectors.Values.ToList());
+        }
+
+        public void GenMeshesOcclusion()
+        {
+            _collectorManager.Clear();
+
+            for (int z = 0; z < Tile.GridSize.Z; z++)
+            {
+                float pz = z + 0.5f;
+
+                for (int x = 0; x < Tile.GridSize.X; x++)
+                {
+                    float px = x + 0.5f;
+
+                    for (int y = 0; y < Tile.GridSize.Y; y++)
+                    {
+                        float py = y + 0.5f;
+
+                        var block = Tile.GetBlock(new Vector3I(x, y, z));
                         var queue = block.RenderingMaterial.RenderQueue;
 
                         if (queue == RenderQueue.None)
@@ -323,20 +502,36 @@ namespace VoxelWorldEngine.Terrain
             color4.A = a;
 
             var collector = _collectorManager.Get(mat.RenderQueue);
+            var scale = Tile.VoxelSize;
             collector.AddQuad(
-                new VertexFormats.PosColorTexNormal(pos1 * Scale + Offset, normal, color1, tex1),
-                new VertexFormats.PosColorTexNormal(pos2 * Scale + Offset, normal, color2, tex2),
-                new VertexFormats.PosColorTexNormal(pos3 * Scale + Offset, normal, color3, tex3),
-                new VertexFormats.PosColorTexNormal(pos4 * Scale + Offset, normal, color4, tex4));
+                new VertexFormats.PosColorTexNormal(pos1 * scale, normal, color1, tex1),
+                new VertexFormats.PosColorTexNormal(pos2 * scale, normal, color2, tex2),
+                new VertexFormats.PosColorTexNormal(pos3 * scale, normal, color3, tex3),
+                new VertexFormats.PosColorTexNormal(pos4 * scale, normal, color4, tex4));
         }
 
-        internal void Draw(GameTime gameTime, RenderQueue queue)
+        internal void Draw(GameTime gameTime, BaseCamera camera, RenderQueue queue)
         {
-            foreach (var mesh in Meshes)
+            var offset = Tile.Centroid.RelativeTo(PlayerController.Instance.PlayerPosition) - Tile.RealSize / 2.0f - new Vector3(0,2.1f,0);
+            var world = Matrix.CreateTranslation(offset);
+
+            RenderManager.Instance.CurrentEffect.Parameters["Projection"].SetValue(camera.Projection);
+            RenderManager.Instance.CurrentEffect.Parameters["View"].SetValue(camera.View);
+            RenderManager.Instance.CurrentEffect.Parameters["World"].SetValue(world);
+            RenderManager.Instance.CurrentEffect.Parameters["WorldViewIT"].SetValue(Matrix.Transpose(Matrix.Invert(world * camera.View)));
+
+            foreach (var pass in RenderManager.Instance.CurrentEffect.CurrentTechnique.Passes)
             {
-                if (mesh.Queue == queue)
+                pass.Apply();
+
+                GraphicsDevice.Textures[0] = RenderManager.Instance.TerrainTexture;
+
+                foreach (var mesh in Meshes)
                 {
-                    mesh.Draw(gameTime);
+                    if (mesh.Queue == queue)
+                    {
+                        mesh.Draw(gameTime);
+                    }
                 }
             }
         }

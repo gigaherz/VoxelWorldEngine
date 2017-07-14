@@ -28,5 +28,5 @@ namespace VoxelWorldEngine
         }
     }
 #endif
-            }
+}
 

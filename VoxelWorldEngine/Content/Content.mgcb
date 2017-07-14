@@ -46,6 +46,61 @@
 #begin Font.spritefont
 /importer:FontDescriptionImporter
 /processor:FontDescriptionProcessor
+/processorParam:PremultiplyAlpha=True
 /processorParam:TextureFormat=Compressed
 /build:Font.spritefont
+
+#begin SSAO.fx
+/importer:EffectImporter
+/processor:EffectProcessor
+/processorParam:DebugMode=Auto
+/build:SSAO.fx
+
+#begin SSAOBlur.fx
+/importer:EffectImporter
+/processor:EffectProcessor
+/processorParam:DebugMode=Auto
+/build:SSAOBlur.fx
+
+#begin SSAOFinal.fx
+/importer:EffectImporter
+/processor:EffectProcessor
+/processorParam:DebugMode=Auto
+/build:SSAOFinal.fx
+
+#begin GBuffer.fx
+/importer:EffectImporter
+/processor:EffectProcessor
+/processorParam:DebugMode=Auto
+/build:GBuffer.fx
+
+#begin Clear.fx
+/importer:EffectImporter
+/processor:EffectProcessor
+/processorParam:DebugMode=Auto
+/build:Clear.fx
+
+#begin Composition.fx
+/importer:EffectImporter
+/processor:EffectProcessor
+/processorParam:DebugMode=Auto
+/build:Composition.fx
+
+#begin DirectionalLight.fx
+/importer:EffectImporter
+/processor:EffectProcessor
+/processorParam:DebugMode=Auto
+/build:DirectionalLight.fx
+
+#begin RandomNormals.png
+/importer:TextureImporter
+/processor:TextureProcessor
+/processorParam:ColorKeyColor=255,0,255,255
+/processorParam:ColorKeyEnabled=True
+/processorParam:GenerateMipmaps=False
+/processorParam:PremultiplyAlpha=True
+/processorParam:ResizeToPowerOfTwo=False
+/processorParam:MakeSquare=False
+/processorParam:TextureFormat=Color
+/build:RandomNormals.png
 
