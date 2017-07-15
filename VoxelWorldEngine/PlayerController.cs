@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
@@ -22,7 +23,7 @@ namespace VoxelWorldEngine
 
         public EntityPosition PlayerPosition { get; private set; }
         public EntityPosition PlayerPositionTarget { get; private set; }
-        public EntityOrientation PlayerOrientation { get; }
+        public EntityOrientation PlayerOrientation { get; private set; }
 
         public PlayerController(Game game) : base(game)
         {
@@ -65,9 +66,8 @@ namespace VoxelWorldEngine
 
                 var mouseDelta = VoxelGame.Instance.MouseDelta;
 
-                PlayerOrientation.RotateYaw(mouseDelta.X * 0.0025f);
-                PlayerOrientation.RotatePitch(mouseDelta.Y * 0.0025f);
-
+                PlayerOrientation = PlayerOrientation.RotateYaw(mouseDelta.X * 0.0025f);
+                PlayerOrientation = PlayerOrientation.RotatePitch(mouseDelta.Y * 0.0025f);
             }
 
             RenderManager.Instance.CameraForward = PlayerOrientation.Forward;

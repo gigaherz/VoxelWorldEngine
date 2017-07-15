@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
@@ -47,14 +48,16 @@ namespace VoxelWorldEngine.Maths
             }
         }
 
-        public void RotateYaw(float angle)
+        public EntityOrientation RotateYaw(float angle)
         {
-            Yaw += angle;
+            Yaw = MathHelper.WrapAngle(Yaw + angle);
+            return this;
         }
 
-        public void RotatePitch(float angle)
+        public EntityOrientation RotatePitch(float angle)
         {
             Pitch = MathHelper.Clamp(Pitch + angle, -1.56f, 1.56f);
+            return this;
         }
 
         public override string ToString()

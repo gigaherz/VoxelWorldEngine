@@ -1,6 +1,7 @@
 using System;
 using System.Threading;
 using Microsoft.Xna.Framework;
+using Microsoft.Xna.Framework.Graphics;
 using Microsoft.Xna.Framework.Input;
 using VoxelWorldEngine.Maths;
 using VoxelWorldEngine.Objects;
@@ -42,7 +43,8 @@ namespace VoxelWorldEngine
                 PreferredBackBufferWidth = 1920,
                 PreferredBackBufferHeight = 1080,
                 PreferMultiSampling = false,
-                SynchronizeWithVerticalRetrace = false
+                SynchronizeWithVerticalRetrace = false,
+                GraphicsProfile = GraphicsProfile.HiDef
             };
             _graphics.ApplyChanges();
 
@@ -165,7 +167,9 @@ namespace VoxelWorldEngine
             {
                 Window.Title = $"FPS: {_frames / elapsed}; Tiles in progress: {Grid.TilesInProgress};" +
                                $" Pending tiles: {Grid.PendingTiles}; Queued tasks: {PriorityScheduler.Instance.QueuedTaskCount};" +
-                               $" Player At: {_playerController.PlayerPosition}; Angles: {_playerController.PlayerOrientation}; Target: {_playerController.PlayerPositionTarget}";
+                               $" Player At: {_playerController.PlayerPosition}; Angles: {_playerController.PlayerOrientation};"+
+                               $" Target: {_playerController.PlayerPositionTarget}" +
+                               $" Mouse: {MouseDelta}";
                 _frames = 0;
                 _lastFpsTime = now;
             }
