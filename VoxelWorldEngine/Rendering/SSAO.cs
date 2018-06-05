@@ -59,7 +59,7 @@ namespace VoxelWorldEngine.Rendering
             GraphicsDevice.BlendState = BlendState.Opaque;
             GraphicsDevice.RasterizerState = RasterizerState.CullNone;
             GraphicsDevice.SetRenderTarget(_ssaoTarget);
-            GraphicsDevice.Clear(Color.White);
+            GraphicsDevice.Clear(Color.TransparentBlack);
 
             var ar = camera.AspectRatio;
             var farz = camera.FarClip;

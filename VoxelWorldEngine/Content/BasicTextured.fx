@@ -82,7 +82,12 @@ technique Technique
 {
     pass Pass
     {
+#if SM4
         VertexShader = compile vs_4_0 VS_main();
         PixelShader  = compile ps_4_0 PS_main();
+#else
+        VertexShader = compile vs_3_0 VS_main();
+        PixelShader = compile ps_3_0 PS_main();
+#endif
     }
 }

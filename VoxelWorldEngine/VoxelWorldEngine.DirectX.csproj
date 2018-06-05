@@ -98,12 +98,12 @@
     <Compile Include="Terrain\Graphics\TileMesh.cs" />
     <Compile Include="Storage\DataSystem.cs" />
     <Compile Include="Terrain\GenerationContext.cs" />
+    <Compile Include="Util\OcTree.cs" />
     <Compile Include="Util\SingleAccessVerify.cs" />
     <Compile Include="Terrain\Graphics\TileGraphics.cs" />
     <Compile Include="Util\MouseExtras.cs" />
     <Compile Include="Registry\ObjectKey.cs" />
     <Compile Include="Noise\Perlin.cs" />
-    <Compile Include="Util\OcTree.cs" />
     <Compile Include="Util\PriorityScheduler.cs" />
     <Compile Include="Program.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
@@ -152,7 +152,10 @@
       <SubType>Designer</SubType>
     </MonoGameContentReference>
   </ItemGroup>
-  <ItemGroup />
+  <ItemGroup>
+    <Folder Include="Components\" />
+    <Folder Include="Objects\Entities\" />
+  </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <Import Project="$(MSBuildExtensionsPath)\MonoGame\v3.0\MonoGame.Content.Builder.targets" />
   <!-- To modify your build process, add your task inside one of the targets below and uncomment it. 

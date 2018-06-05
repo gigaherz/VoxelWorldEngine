@@ -159,13 +159,15 @@ namespace VoxelWorldEngine
             }
         }
 
+        private double fpsAcc = 0;
         private void ShowFps(GameTime gameTime)
         {
             var now = gameTime.TotalGameTime;
             var elapsed = (now - _lastFpsTime).TotalSeconds;
             if (elapsed >= 0.1)
             {
-                Window.Title = $"FPS: {_frames / elapsed}; Tiles in progress: {Grid.TilesInProgress};" +
+                fpsAcc = fpsAcc * 0.9 + (_frames / elapsed) * (1-0.9);
+                Window.Title = $"FPS: {fpsAcc}; Tiles in progress: {Grid.TilesInProgress};" +
                                $" Pending tiles: {Grid.PendingTiles}; Queued tasks: {PriorityScheduler.Instance.QueuedTaskCount};" +
                                $" Player At: {_playerController.PlayerPosition}; Angles: {_playerController.PlayerOrientation};"+
                                $" Target: {_playerController.PlayerPositionTarget}" +

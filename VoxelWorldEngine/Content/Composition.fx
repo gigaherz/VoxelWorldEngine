@@ -62,7 +62,12 @@ technique Default
 {
     pass p0
     {
+#if SM4
         VertexShader = compile vs_4_0 VS();
         PixelShader = compile ps_4_0 PS();
+#else
+        VertexShader = compile vs_3_0 VS();
+        PixelShader = compile ps_3_0 PS();
+#endif
     }
 }

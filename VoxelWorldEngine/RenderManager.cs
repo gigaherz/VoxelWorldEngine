@@ -65,9 +65,9 @@ namespace VoxelWorldEngine
             var parameters = GraphicsDevice.PresentationParameters;
             _deferredRenderer = new DeferredRenderer(Game, Game.Content, parameters.BackBufferWidth, parameters.BackBufferHeight);
             _lightManager = new LightManager(Game.Content);
-            _lightManager.AddLight(new DirectionalLight(new Vector3(0.2f, -0.5f, 0.2f), Color.White, 1.0f));
-            _lightManager.AddLight(new DirectionalLight(new Vector3(-0.2f, -0.2f, 0.2f), new Color(0.8f, 1, 0.9f), 0.3f));
-            _lightManager.AddLight(new DirectionalLight(new Vector3(0.2f, -0.2f, -0.2f), new Color(0.9f, 1, 0.8f), 0.3f));
+            _lightManager.AddLight(new DirectionalLight(new Vector3(1f, -3f, 1f), Color.White, 0.9f));
+            _lightManager.AddLight(new DirectionalLight(new Vector3(-2f, -1f, -1f), new Color(1.0f, 1.0f, 0.5f), 0.5f));
+            _lightManager.AddLight(new DirectionalLight(new Vector3(2f, -1f, -1f), new Color(0.5f, 1.0f, 1.0f), 0.3f));
             _ssao = new SSAO(Game, Game.Content, parameters.BackBufferWidth, parameters.BackBufferHeight);
             _outputRenderTarget = new RenderTarget2D(GraphicsDevice, parameters.BackBufferWidth, parameters.BackBufferHeight, false, SurfaceFormat.Color, DepthFormat.Depth24Stencil8);
 
@@ -81,12 +81,18 @@ namespace VoxelWorldEngine
             _ssao.Modify(VoxelGame.Instance.LastKeyboardState);
         }
 
+        bool isSsaoEnabled = false;
+        bool isSsaoEnabledPressed = false;
         public override void Draw(GameTime gameTime)
         {
             _baseCamera.Forward = CameraForward;
 
             //Draw with SSAO unless F1 is down 
-            if (VoxelGame.Instance.LastKeyboardState.IsKeyDown(Keys.F1))
+            var ss = VoxelGame.Instance.LastKeyboardState.IsKeyDown(Keys.F1);
+            if (!isSsaoEnabledPressed && ss)
+                isSsaoEnabled = !isSsaoEnabled;
+            isSsaoEnabledPressed = ss;
+            if (!isSsaoEnabled)
             {
                 _deferredRenderer.Draw(gameTime, GetDrawables(), _lightManager, _baseCamera, null);
             }
