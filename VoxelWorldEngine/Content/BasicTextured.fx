@@ -3,7 +3,7 @@
 float4x4 World;
 float4x4 View;
 float4x4 Projection;
-float4x4 WorldViewIT;
+float3x3 WorldViewIT;
 
 Texture Texture0;
 sampler sampler0 = sampler_state {
@@ -47,7 +47,7 @@ VS_out VS_main(VS_in input)
     float4 worldPosition = mul(input.Position, World);
     float4 viewPosition = mul(worldPosition, View);
     output.Position = mul(viewPosition, Projection);
-    output.Normal = normalize(mul(input.Normal, (float3x3)WorldViewIT));
+    output.Normal = normalize(mul(input.Normal, WorldViewIT));
     output.Color = input.Color;
     output.TexCoord0 = input.TexCoord0;
 
@@ -78,6 +78,18 @@ PS_out PS_main(VS_out input)
     return output;
 }
 
+PS_out PS(VS_out input)
+{
+    PS_out output;
+
+    output.Color = float4(1, 1, 1, 1);
+    output.Normal = float4(0, 0, 1, 1);
+    output.Depth = float4(1, 1, 1, 1);
+    output.Albedo = float4(1, 1, 1, 1);
+
+    return output;
+}
+
 technique Technique
 {
     pass Pass
@@ -87,7 +99,7 @@ technique Technique
         PixelShader  = compile ps_4_0 PS_main();
 #else
         VertexShader = compile vs_3_0 VS_main();
-        PixelShader = compile ps_3_0 PS_main();
+        PixelShader = compile ps_3_0 PS();
 #endif
     }
 }

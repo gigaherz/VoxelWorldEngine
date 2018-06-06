@@ -54,16 +54,16 @@ namespace VoxelWorldEngine
 
         protected override void Initialize()
         {
-            if (Window != null && MouseExtras.IsForeground(Window))
+            if (Window != null && MouseExtras.Instance.IsForeground(this, Window))
             {
                 Window.AllowUserResizing = true;
 
-                if (!MouseExtras.HasCapture(Window))
-                    MouseExtras.SetCapture(Window);
+                if (!MouseExtras.Instance.HasCapture(this, Window))
+                    MouseExtras.Instance.SetCapture(Window);
 
                 var centerX = Window.ClientBounds.Width / 2;
                 var centerY = Window.ClientBounds.Height / 2;
-                MouseExtras.SetPosition(Window, centerX, centerY);
+                MouseExtras.Instance.SetPosition(Window, centerX, centerY);
             }
             
             Components.Add(Grid = new Grid(this));
@@ -88,7 +88,7 @@ namespace VoxelWorldEngine
         protected override void OnExiting(object sender, EventArgs args)
         {
             base.OnExiting(sender, args);
-            MouseExtras.ReleaseCapture();
+            MouseExtras.Instance.ReleaseCapture();
             PriorityScheduler.Instance.Dispose();
         }
 
@@ -102,12 +102,12 @@ namespace VoxelWorldEngine
             LastKeyboardState = Keyboard.GetState();
 
 
-            if (!MouseExtras.IsForeground(Window))
+            if (!MouseExtras.Instance.IsForeground(this, Window))
             {
                 IsMouseVisible = true;
                 Paused = true;
-                if (MouseExtras.HasCapture(Window))
-                    MouseExtras.ReleaseCapture();
+                if (MouseExtras.Instance.HasCapture(this, Window))
+                    MouseExtras.Instance.ReleaseCapture();
 
                 MouseDelta = new Vector2I();
             }
@@ -119,8 +119,8 @@ namespace VoxelWorldEngine
                     Paused = !Paused;
                     if (Paused)
                     {
-                        if (MouseExtras.HasCapture(Window))
-                            MouseExtras.ReleaseCapture();
+                        if (MouseExtras.Instance.HasCapture(this, Window))
+                            MouseExtras.Instance.ReleaseCapture();
                     }
                     IsMouseVisible = Paused;
                 }
@@ -128,11 +128,11 @@ namespace VoxelWorldEngine
 
                 var mouseX = 0;
                 var mouseY = 0;
-                if (!Paused && MouseExtras.HasCapture(Window))
+                if (!Paused && MouseExtras.Instance.HasCapture(this, Window))
                 {
                     var centerX = Window.ClientBounds.Width / 2;
                     var centerY = Window.ClientBounds.Height / 2;
-                    var mouse = MouseExtras.GetPosition(Window);
+                    var mouse = MouseExtras.Instance.GetPosition(Window);
                     mouseX = mouse.X - centerX;
                     mouseY = mouse.Y - centerY;
                 }
@@ -148,14 +148,14 @@ namespace VoxelWorldEngine
 
             base.Update(gameTime);
 
-            if (!Paused && MouseExtras.IsForeground(Window))
+            if (!Paused && MouseExtras.Instance.IsForeground(this, Window))
             {
-                if (!MouseExtras.HasCapture(Window))
-                    MouseExtras.SetCapture(Window);
+                if (!MouseExtras.Instance.HasCapture(this, Window))
+                    MouseExtras.Instance.SetCapture(Window);
 
                 var centerX = Window.ClientBounds.Width / 2;
                 var centerY = Window.ClientBounds.Height / 2;
-                MouseExtras.SetPosition(Window, centerX, centerY);
+                MouseExtras.Instance.SetPosition(Window, centerX, centerY);
             }
         }
 
