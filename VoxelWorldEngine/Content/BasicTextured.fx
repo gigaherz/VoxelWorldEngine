@@ -78,18 +78,6 @@ PS_out PS_main(VS_out input)
     return output;
 }
 
-PS_out PS(VS_out input)
-{
-    PS_out output;
-
-    output.Color = float4(1, 1, 1, 1);
-    output.Normal = float4(0, 0, 1, 1);
-    output.Depth = float4(1, 1, 1, 1);
-    output.Albedo = float4(1, 1, 1, 1);
-
-    return output;
-}
-
 technique Technique
 {
     pass Pass
@@ -99,7 +87,7 @@ technique Technique
         PixelShader  = compile ps_4_0 PS_main();
 #else
         VertexShader = compile vs_3_0 VS_main();
-        PixelShader = compile ps_3_0 PS();
+        PixelShader = compile ps_3_0 PS_main();
 #endif
     }
 }
