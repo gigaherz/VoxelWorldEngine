@@ -512,8 +512,18 @@ namespace VoxelWorldEngine.Terrain.Graphics
 
         internal void Draw(GameTime gameTime, BaseCamera camera, RenderQueue queue)
         {
+            if (Meshes.Count == 0)
+                return;
+
             var offset = Tile.Centroid.RelativeTo(PlayerController.Instance.PlayerPosition) - Tile.RealSize / 2.0f - new Vector3(0,2.1f,0);
             var world = Matrix.CreateTranslation(offset);
+
+            //var boundingBox = new BoundingBox(Tile.RealSize * -0.5f + offset, Tile.RealSize * 0.5f + offset);
+
+            var boundingBox = new BoundingBox(offset, Tile.RealSize + offset);
+
+            if (!camera.ViewFrustum.Intersects(boundingBox))
+                return;
 
             RenderManager.Instance.CurrentEffect.Parameters["Projection"].SetValue(camera.Projection);
             RenderManager.Instance.CurrentEffect.Parameters["View"].SetValue(camera.View);

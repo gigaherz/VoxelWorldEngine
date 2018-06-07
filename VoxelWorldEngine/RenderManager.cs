@@ -86,6 +86,7 @@ namespace VoxelWorldEngine
         public override void Draw(GameTime gameTime)
         {
             _baseCamera.Forward = CameraForward;
+            _baseCamera.ViewFrustum = new BoundingFrustum(_baseCamera.View * _baseCamera.Projection);
 
             //Draw with SSAO unless F1 is down 
             var ss = VoxelGame.Instance.LastKeyboardState.IsKeyDown(Keys.F1);
@@ -112,6 +113,7 @@ namespace VoxelWorldEngine
                 SpriteBatch.DrawString(Font, "Paused",
                     new Vector2(bounds.Width / 2.0f, bounds.Height / 2.0f), Color.White);
             }
+            SpriteBatch.DrawString(Font, $"Draw Calls: {StatManager.PerFrame["DrawCalls"].Value}", new Vector2(5, 500), Color.White);
             SpriteBatch.End();
         }
 

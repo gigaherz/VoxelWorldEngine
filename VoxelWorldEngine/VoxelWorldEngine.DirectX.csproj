@@ -28,6 +28,7 @@
     <PlatformTarget>AnyCPU</PlatformTarget>
     <ErrorReport>prompt</ErrorReport>
     <CodeAnalysisRuleSet>MinimumRecommendedRules.ruleset</CodeAnalysisRuleSet>
+    <Prefer32Bit>false</Prefer32Bit>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Release|AnyCPU'">
     <OutputPath>bin\Release\</OutputPath>
@@ -116,6 +117,7 @@
     <Compile Include="Maths\Vector2D.cs" />
     <Compile Include="Maths\Vector3D.cs" />
     <Compile Include="Maths\Vector3I.cs" />
+    <Compile Include="Util\StatManager.cs" />
     <Compile Include="VoxelGame.cs" />
     <Compile Include="Terrain\Grid.cs" />
     <Compile Include="Rendering\Mesh.cs" />

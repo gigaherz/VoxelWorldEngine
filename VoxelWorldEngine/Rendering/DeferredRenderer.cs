@@ -106,6 +106,7 @@ namespace VoxelWorldEngine.Rendering
 
             foreach (var renderable in renderables)
             {
+                //if (renderable.)
                 renderable.Draw(gameTime, camera);
             }
 

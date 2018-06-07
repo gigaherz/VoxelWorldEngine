@@ -180,8 +180,8 @@ namespace VoxelWorldEngine
         protected override void Draw(GameTime gameTime)
         {
             _frames++;
-            //_renderManager.Draw(gameTime);
             base.Draw(gameTime);
+            StatManager.PerFrame.Reset();
         }
 
     }

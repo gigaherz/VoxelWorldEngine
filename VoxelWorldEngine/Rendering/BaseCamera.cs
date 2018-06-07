@@ -17,6 +17,8 @@ namespace VoxelWorldEngine.Rendering
         public Matrix View => Matrix.CreateLookAt(Vector3.Zero, Forward, Vector3.UnitY);
         public Matrix World { get; set; }
 
+        public BoundingFrustum ViewFrustum { get; set; }
+
         public BaseCamera(GraphicsDevice device)
         {
             GraphicsDevice = device;

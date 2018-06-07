@@ -3,6 +3,7 @@ using System.Reflection;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using VoxelWorldEngine.Objects;
+using VoxelWorldEngine.Util;
 
 namespace VoxelWorldEngine.Rendering
 {
@@ -16,6 +17,8 @@ namespace VoxelWorldEngine.Rendering
 
         public GraphicsDevice GraphicsDevice { get; set; }
 
+        private Game _game;
+
         public Mesh(Game game, RenderQueue queue, T[] vertices, int[] indices)
             : this(game, queue, vertices, vertices.Length, indices, indices.Length)
         {
@@ -23,6 +26,8 @@ namespace VoxelWorldEngine.Rendering
 
         public Mesh(Game game, RenderQueue queue, T[] vertices, int verticesLength, int[] indices, int indicesLength)
         {
+            _game = game;
+
             Queue = queue;
 
             GraphicsDevice = game.GraphicsDevice;
@@ -45,6 +50,7 @@ namespace VoxelWorldEngine.Rendering
         {
             ReadyBuffers();
             GraphicsDevice.DrawIndexedPrimitives(PrimitiveType.TriangleList, 0, 0, _ibuffer.IndexCount / 3);
+            StatManager.PerFrame["DrawCalls"].Increment();
         }
 
         public void ReadyBuffers()
@@ -56,6 +62,7 @@ namespace VoxelWorldEngine.Rendering
         public void JustDraw(GameTime gameTime)
         {
             GraphicsDevice.DrawIndexedPrimitives(PrimitiveType.TriangleList, 0, 0, _ibuffer.IndexCount / 3);
+            StatManager.PerFrame["DrawCalls"].Increment();
         }
 
         public void Dispose()
