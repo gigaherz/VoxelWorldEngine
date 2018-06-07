@@ -16,7 +16,7 @@ namespace VoxelWorldEngine.Terrain
     {
         public static int MaxTilesInProgress = PriorityScheduler.Instance.MaximumConcurrencyLevel * 2;
         public static int MaxTilesQueued = MaxTilesInProgress;
-        public static int LoadRadius = 512;
+        public static int LoadRadius = 200;
         public static int UnloadRadius = 600;
         public static int LoadRange = LoadRadius / Tile.GridSize.X;
         public static int UnloadRange = UnloadRadius / Tile.GridSize.X;

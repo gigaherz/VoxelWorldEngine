@@ -40,8 +40,8 @@ namespace VoxelWorldEngine
 
             _graphics = new GraphicsDeviceManager(this)
             {
-                PreferredBackBufferWidth = 1920,
-                PreferredBackBufferHeight = 1080,
+                PreferredBackBufferWidth = 1280,
+                PreferredBackBufferHeight = 720,
                 PreferMultiSampling = false,
                 SynchronizeWithVerticalRetrace = false,
                 GraphicsProfile = GraphicsProfile.HiDef
@@ -92,6 +92,7 @@ namespace VoxelWorldEngine
             PriorityScheduler.Instance.Dispose();
         }
 
+        private Point lastMouse;
         protected override void Update(GameTime gameTime)
         {
             if (Window == null)
@@ -130,11 +131,11 @@ namespace VoxelWorldEngine
                 var mouseY = 0;
                 if (!Paused && MouseExtras.Instance.HasCapture(this, Window))
                 {
-                    var centerX = Window.ClientBounds.Width / 2;
-                    var centerY = Window.ClientBounds.Height / 2;
+                    //var centerX = Window.ClientBounds.Width / 2;
+                    //var centerY = Window.ClientBounds.Height / 2;
                     var mouse = MouseExtras.Instance.GetPosition(Window);
-                    mouseX = mouse.X - centerX;
-                    mouseY = mouse.Y - centerY;
+                    mouseX = mouse.X - lastMouse.X;
+                    mouseY = mouse.Y - lastMouse.Y;
                 }
                 MouseDelta = new Vector2I(mouseX, mouseY);
             }
@@ -156,6 +157,7 @@ namespace VoxelWorldEngine
                 var centerX = Window.ClientBounds.Width / 2;
                 var centerY = Window.ClientBounds.Height / 2;
                 MouseExtras.Instance.SetPosition(Window, centerX, centerY);
+                lastMouse = MouseExtras.Instance.GetPosition(Window);
             }
         }
 

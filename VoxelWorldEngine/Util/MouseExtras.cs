@@ -6,6 +6,7 @@ using System.Text;
 using System.Threading.Tasks;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Input;
+using VoxelWorldEngine.Maths;
 
 namespace VoxelWorldEngine
 {
@@ -25,7 +26,7 @@ namespace VoxelWorldEngine
                 Instance = new MouseExtras();
             }
         }
-
+        
         bool fakeCapture = false;
         public virtual bool HasCapture(Game game, GameWindow window)
         {
@@ -51,7 +52,7 @@ namespace VoxelWorldEngine
 
         public virtual Point GetPosition(GameWindow window)
         {
-            return Mouse.GetState(window).Position;
+            return Mouse.GetState().Position;
         }
 
         public virtual void SetPosition(GameWindow window, int x, int y)
