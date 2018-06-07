@@ -4,7 +4,6 @@ using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using Microsoft.Xna.Framework;
-using Microsoft.Xna.Framework.Graphics;
 using VoxelWorldEngine.Maths;
 using VoxelWorldEngine.Objects;
 using VoxelWorldEngine.Registry;

@@ -57,10 +57,17 @@ namespace VoxelWorldEngine.Rendering
 
             _bufferTextureSize = new Vector2(width, height);
 
+#if OPENGL
+            Colors = new RenderTarget2D(GraphicsDevice, width, height, false, SurfaceFormat.HalfVector4, DepthFormat.Depth24Stencil8);
+            Albedo = new RenderTarget2D(GraphicsDevice, width, height, false, SurfaceFormat.HalfVector4, DepthFormat.Depth24Stencil8);
+            Normals = new RenderTarget2D(GraphicsDevice, width, height, false, SurfaceFormat.HalfVector4, DepthFormat.Depth24Stencil8);
+            Depth = new RenderTarget2D(GraphicsDevice, width, height, false, SurfaceFormat.Vector2, DepthFormat.Depth24Stencil8);
+#else
             Colors = new RenderTarget2D(GraphicsDevice, width, height, false, SurfaceFormat.Rgba64, DepthFormat.Depth24Stencil8);
             Albedo = new RenderTarget2D(GraphicsDevice, width, height, false, SurfaceFormat.Rgba64, DepthFormat.Depth24Stencil8);
             Normals = new RenderTarget2D(GraphicsDevice, width, height, false, SurfaceFormat.Rgba64, DepthFormat.Depth24Stencil8);
             Depth = new RenderTarget2D(GraphicsDevice, width, height, false, SurfaceFormat.Vector2, DepthFormat.Depth24Stencil8);
+#endif
 
             _gBufferTargets = new[] {
                 new RenderTargetBinding(Colors),

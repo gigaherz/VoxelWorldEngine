@@ -23,7 +23,7 @@
   <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|AnyCPU'">
     <DebugSymbols>true</DebugSymbols>
     <OutputPath>bin\DebugGL\</OutputPath>
-    <DefineConstants>TRACE;DEBUG</DefineConstants>
+    <DefineConstants>TRACE;DEBUG;OPENGL</DefineConstants>
     <DebugType>full</DebugType>
     <PlatformTarget>AnyCPU</PlatformTarget>
     <ErrorReport>prompt</ErrorReport>
@@ -100,6 +100,7 @@
     <Compile Include="Util\OcTree.cs" />
     <Compile Include="Util\PriorityScheduler.cs" />
     <Compile Include="Util\SingleAccessVerify.cs" />
+    <Compile Include="Util\StatManager.cs" />
     <Compile Include="VoxelGame.cs" />
   </ItemGroup>
   <ItemGroup>

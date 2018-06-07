@@ -136,19 +136,11 @@ namespace VoxelWorldEngine.Terrain.Graphics
                             var pos3 = new Vector3(px - 0.5f, py + 0.5f, pz + 0.5f);
                             var pos4 = new Vector3(px - 0.5f, py + 0.5f, pz - 0.5f);
 
-                            var c1 = (int)((Ambient) * 255 / Ambient);
-                            var c2 = (int)((Ambient) * 255 / Ambient);
-                            var c3 = (int)((Ambient) * 255 / Ambient);
-                            var c4 = (int)((Ambient) * 255 / Ambient);
-
-                            var color1 = new Color(c1, c1, c1);
-                            var color2 = new Color(c2, c2, c2);
-                            var color3 = new Color(c3, c3, c3);
-                            var color4 = new Color(c4, c4, c4);
+                            var color1 = Color.White;
 
                             AddFace(block.RenderingMaterial,
                                 pos1, pos2, pos3, pos4,
-                                color1, color2, color3, color4,
+                                color1, color1, color1, color1,
                                 new Vector3(-1, 0, 0));
                         }
 
@@ -159,19 +151,11 @@ namespace VoxelWorldEngine.Terrain.Graphics
                             var pos3 = new Vector3(px + 0.5f, py + 0.5f, pz - 0.5f);
                             var pos4 = new Vector3(px + 0.5f, py + 0.5f, pz + 0.5f);
 
-                            var c1 = (int)((Ambient) * 255 / Ambient);
-                            var c2 = (int)((Ambient) * 255 / Ambient);
-                            var c3 = (int)((Ambient) * 255 / Ambient);
-                            var c4 = (int)((Ambient) * 255 / Ambient);
-
-                            var color1 = new Color(c1, c1, c1);
-                            var color2 = new Color(c2, c2, c2);
-                            var color3 = new Color(c3, c3, c3);
-                            var color4 = new Color(c4, c4, c4);
+                            var color1 = Color.White;
 
                             AddFace(block.RenderingMaterial,
                                 pos1, pos2, pos3, pos4,
-                                color1, color2, color3, color4,
+                                color1, color1, color1, color1,
                                 new Vector3(1, 0, 0));
                         }
 
@@ -182,19 +166,11 @@ namespace VoxelWorldEngine.Terrain.Graphics
                             var pos3 = new Vector3(px + 0.5f, py - 0.5f, pz + 0.5f);
                             var pos4 = new Vector3(px - 0.5f, py - 0.5f, pz + 0.5f);
 
-                            var c1 = (int)((Ambient) * 255 / Ambient);
-                            var c2 = (int)((Ambient) * 255 / Ambient);
-                            var c3 = (int)((Ambient) * 255 / Ambient);
-                            var c4 = (int)((Ambient) * 255 / Ambient);
-
-                            var color1 = new Color(c1, c1, c1);
-                            var color2 = new Color(c2, c2, c2);
-                            var color3 = new Color(c3, c3, c3);
-                            var color4 = new Color(c4, c4, c4);
+                            var color1 = Color.White;
 
                             AddFace(block.RenderingMaterial,
                                 pos1, pos2, pos3, pos4,
-                                color1, color2, color3, color4,
+                                color1, color1, color1, color1,
                                 new Vector3(0, -1, 0));
                         }
 
@@ -205,19 +181,11 @@ namespace VoxelWorldEngine.Terrain.Graphics
                             var pos3 = new Vector3(px + 0.5f, py + 0.5f, pz - 0.5f);
                             var pos4 = new Vector3(px - 0.5f, py + 0.5f, pz - 0.5f);
 
-                            var c1 = (int)((Ambient) * 255 / Ambient);
-                            var c2 = (int)((Ambient) * 255 / Ambient);
-                            var c3 = (int)((Ambient) * 255 / Ambient);
-                            var c4 = (int)((Ambient) * 255 / Ambient);
-
-                            var color1 = new Color(c1, c1, c1);
-                            var color2 = new Color(c2, c2, c2);
-                            var color3 = new Color(c3, c3, c3);
-                            var color4 = new Color(c4, c4, c4);
+                            var color1 = Color.White;
 
                             AddFace(block.RenderingMaterial,
                                 pos1, pos2, pos3, pos4,
-                                color1, color2, color3, color4,
+                                color1, color1, color1, color1,
                                 new Vector3(0, 1, 0));
                         }
 
@@ -228,19 +196,11 @@ namespace VoxelWorldEngine.Terrain.Graphics
                             var pos3 = new Vector3(px - 0.5f, py + 0.5f, pz - 0.5f);
                             var pos4 = new Vector3(px + 0.5f, py + 0.5f, pz - 0.5f);
 
-                            var c1 = (int)((Ambient) * 255 / Ambient);
-                            var c2 = (int)((Ambient) * 255 / Ambient);
-                            var c3 = (int)((Ambient) * 255 / Ambient);
-                            var c4 = (int)((Ambient) * 255 / Ambient);
-
-                            var color1 = new Color(c1, c1, c1);
-                            var color2 = new Color(c2, c2, c2);
-                            var color3 = new Color(c3, c3, c3);
-                            var color4 = new Color(c4, c4, c4);
+                            var color1 = Color.White;
 
                             AddFace(block.RenderingMaterial,
                                 pos1, pos2, pos3, pos4,
-                                color1, color2, color3, color4,
+                                color1, color1, color1, color1,
                                 new Vector3(0, 0, -1));
                         }
 
@@ -251,19 +211,11 @@ namespace VoxelWorldEngine.Terrain.Graphics
                             var pos3 = new Vector3(px + 0.5f, py + 0.5f, pz + 0.5f);
                             var pos4 = new Vector3(px - 0.5f, py + 0.5f, pz + 0.5f);
 
-                            var c1 = (int)((Ambient) * 255 / Ambient);
-                            var c2 = (int)((Ambient) * 255 / Ambient);
-                            var c3 = (int)((Ambient) * 255 / Ambient);
-                            var c4 = (int)((Ambient) * 255 / Ambient);
-
-                            var color1 = new Color(c1, c1, c1);
-                            var color2 = new Color(c2, c2, c2);
-                            var color3 = new Color(c3, c3, c3);
-                            var color4 = new Color(c4, c4, c4);
+                            var color1 = Color.White;
 
                             AddFace(block.RenderingMaterial,
                                 pos1, pos2, pos3, pos4,
-                                color1, color2, color3, color4,
+                                color1, color1, color1, color1,
                                 new Vector3(0, 0, 1));
                         }
                     }
