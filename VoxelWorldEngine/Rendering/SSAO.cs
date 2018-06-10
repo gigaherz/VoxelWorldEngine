@@ -14,8 +14,8 @@ namespace VoxelWorldEngine.Rendering
 
         private readonly Texture2D _randomNormals;
 
-        private readonly RenderTarget2D _ssaoTarget;
-        private readonly RenderTarget2D _blurTarget;
+        private RenderTarget2D _ssaoTarget;
+        private RenderTarget2D _blurTarget;
 
         private readonly FullscreenQuad _fsq;
 
@@ -34,18 +34,29 @@ namespace VoxelWorldEngine.Rendering
             _composer = content.Load<Effect>("SSAOFinal");
             _composer.CurrentTechnique = _composer.Techniques[0];
 
-            var graphicsDevice = Game.GraphicsDevice;
-            _ssaoTarget = new RenderTarget2D(graphicsDevice, width, height, false, SurfaceFormat.Color, DepthFormat.None);
-            _blurTarget = new RenderTarget2D(graphicsDevice, width, height, false, SurfaceFormat.Color, DepthFormat.None);
+            CreateRenderTargets(width, height);
 
             _fsq = new FullscreenQuad(game);
 
             _randomNormals = content.Load<Texture2D>("RandomNormals");
 
-            SampleRadius = 0.15f;
-            DistanceScale = 1.5f;
+            SampleRadius = 0.25f;
+            DistanceScale = 0.01f;
+
+            VoxelGame.Instance.ResolutionChanged += (sender, args) =>
+            {
+                CreateRenderTargets(args.BackBufferWidth, args.BackBufferHeight);
+            };
         }
-        
+
+        private void CreateRenderTargets(int width, int height)
+        {
+            _ssaoTarget?.Dispose();
+            _blurTarget?.Dispose();
+            _ssaoTarget = new RenderTarget2D(GraphicsDevice, width, height, false, SurfaceFormat.Color, DepthFormat.None);
+            _blurTarget = new RenderTarget2D(GraphicsDevice, width, height, false, SurfaceFormat.Color, DepthFormat.None);
+        }
+
         public void Draw(GameTime gameTime, DeferredRenderer deferred, RenderTarget2D scene, BaseCamera camera, bool blur, RenderTarget2D output)
         {
             RenderSsao(gameTime, deferred, camera);

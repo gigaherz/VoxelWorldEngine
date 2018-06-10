@@ -59,6 +59,22 @@ namespace VoxelWorldEngine.Maths
             return new Vector3I(X + x, Y + y, Z + z);
         }
 
+        public static bool operator ==(Vector3I a, Vector3I b)
+        {
+            return 
+                a.X == b.X &&
+                a.Y == b.Y &&
+                a.Z == b.Z;
+        }
+
+        public static bool operator !=(Vector3I a, Vector3I b)
+        {
+            return
+                a.X != b.X ||
+                a.Y != b.Y ||
+                a.Z != b.Z;
+        }
+
         public static Vector3I operator +(Vector3I a, Vector3I b)
         {
             return new Vector3I(
@@ -105,6 +121,30 @@ namespace VoxelWorldEngine.Maths
                 a.X - b,
                 a.Y - b,
                 a.Z - b);
+        }
+
+        public static Vector3I operator *(Vector3I a, int b)
+        {
+            return new Vector3I(
+                a.X * b,
+                a.Y * b,
+                a.Z * b);
+        }
+
+        public static Vector3I operator /(Vector3I a, int b)
+        {
+            return new Vector3I(
+                a.X / b,
+                a.Y / b,
+                a.Z / b);
+        }
+
+        public static Vector3I operator %(Vector3I a, int b)
+        {
+            return new Vector3I(
+                a.X % b,
+                a.Y % b,
+                a.Z % b);
         }
 
         public static Vector3 operator *(Vector3I a, float b)

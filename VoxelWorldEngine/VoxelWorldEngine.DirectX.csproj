@@ -55,9 +55,10 @@
     <Compile Include="Rendering\DirectionalLight.cs" />
     <Compile Include="Rendering\IRenderable.cs" />
     <Compile Include="Rendering\LightManager.cs" />
+    <Compile Include="Rendering\RenderManager.cs" />
     <Compile Include="Rendering\SSAO.cs" />
     <Compile Include="Rendering\MeshBuilderManager.cs" />
-    <Compile Include="RenderManager.cs" />
+    <Compile Include="Storage\CrappyChunkStorage.cs" />
     <Compile Include="Terrain\Graphics\TileMesh.cs" />
     <Compile Include="Storage\DataSystem.cs" />
     <Compile Include="Terrain\GenerationContext.cs" />
@@ -92,6 +93,7 @@
     </Reference>
     <Reference Include="System" />
     <Reference Include="System.Management" />
+    <Reference Include="System.Runtime.Serialization" />
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
@@ -119,6 +121,12 @@
   <ItemGroup>
     <Folder Include="Components\" />
     <Folder Include="Objects\Entities\" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\SharpRiff\SharpRiff.csproj">
+      <Project>{298491AC-D5AA-4160-9AE3-14D564664A85}</Project>
+      <Name>SharpRiff</Name>
+    </ProjectReference>
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <Import Project="$(MSBuildExtensionsPath)\MonoGame\v3.0\MonoGame.Content.Builder.targets" />

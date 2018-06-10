@@ -10,7 +10,7 @@ namespace VoxelWorldEngine.Util
     {
         public static PriorityScheduler Instance = new PriorityScheduler();
 
-        private readonly List<PositionedTask> _tasks = new List<PositionedTask>();
+        private readonly List<PriorityTask> _tasks = new List<PriorityTask>();
         private readonly Semaphore _awaitTasks = new Semaphore(0, 1);
         private readonly ReaderWriterLockSlim _lockTasks = new ReaderWriterLockSlim();
 
@@ -22,6 +22,21 @@ namespace VoxelWorldEngine.Util
 
         int before = Environment.TickCount;
 
+        private PriorityScheduler()
+        {
+            _threads = new Thread[MaximumConcurrencyLevel];
+            for (int i = 0; i < _threads.Length; i++)
+            {
+                _threads[i] = new Thread(ThreadProc)
+                {
+                    Name = string.Format("PriorityScheduler: ", i),
+                    Priority = ThreadPriority.Lowest,
+                    IsBackground = true
+                };
+                _threads[i].Start();
+            }
+        }
+
         public void SetPlayerPosition(EntityPosition newPosition)
         {
             var difference = newPosition.RelativeTo(_lastPlayerPosition);
@@ -31,8 +46,9 @@ namespace VoxelWorldEngine.Util
             {
                 _lockTasks.EnterWriteLock();
                 {
-                    Debug.WriteLine("Sorting Tasks...");
-                    _tasks.Sort((a, b) => -Math.Sign(a.Score(_lastPlayerPosition) - b.Score(_lastPlayerPosition)));
+                    foreach(var task in _tasks)
+                        task.UpdatePriority(_lastPlayerPosition);
+                    _tasks.Sort((a, b) => -Math.Sign(a.Priority - b.Priority));
                 }
                 _lockTasks.ExitWriteLock();
                 _lastPlayerPosition = newPosition;
@@ -40,11 +56,11 @@ namespace VoxelWorldEngine.Util
             }
         }
 
-        private IEnumerable<PositionedTask> GetNextTask()
+        private IEnumerable<PriorityTask> GetNextTask()
         {
             while (true)
             {
-                PositionedTask task = null;
+                PriorityTask task = null;
                 try
                 {
                     _lockTasks.EnterReadLock();
@@ -81,23 +97,24 @@ namespace VoxelWorldEngine.Util
             }
         }
 
-        protected void QueueTask(PositionedTask task)
+        protected void QueueTask(PriorityTask task)
         {
             var pos = _lastPlayerPosition;
+            task.UpdatePriority(pos);
 
             _lockTasks.EnterWriteLock();
             {
-                var score = task.Score(pos);
+                var score = task.Priority;
                 bool inserted = false;
 
                 if (_tasks.Count > 0)
                 {
-                    if (score > _tasks[0].Score(pos))
+                    if (score > _tasks[0].Priority)
                     {
                         inserted = true;
                         _tasks.Insert(0, task);
                     }
-                    else if (score > _tasks[_tasks.Count - 1].Score(pos))
+                    else if (score > _tasks[_tasks.Count - 1].Priority)
                     {
                         int left = 0;
                         int right = _tasks.Count - 1;
@@ -111,7 +128,7 @@ namespace VoxelWorldEngine.Util
                                 break;
                             }
 
-                            var centerScore = _tasks[center].Score(pos);
+                            var centerScore = _tasks[center].Priority;
                             if (score == centerScore)
                             {
                                 if (right == center + 1)
@@ -142,21 +159,6 @@ namespace VoxelWorldEngine.Util
                 }
             }
             _lockTasks.ExitWriteLock();
-
-            if (_threads == null)
-            {
-                _threads = new Thread[MaximumConcurrencyLevel];
-                for (int i = 0; i < _threads.Length; i++)
-                {
-                    _threads[i] = new Thread(ThreadProc)
-                    {
-                        Name = string.Format("PriorityScheduler: ", i),
-                        Priority = ThreadPriority.Lowest,
-                        IsBackground = true
-                    };
-                    _threads[i].Start();
-                }
-            }
         }
 
         private void ThreadProc()
@@ -166,7 +168,7 @@ namespace VoxelWorldEngine.Util
         }
 
         int cnt = 0;
-        private void TryExecuteTask(PositionedTask task)
+        private void TryExecuteTask(PriorityTask task)
         {
             try
             {
@@ -174,10 +176,18 @@ namespace VoxelWorldEngine.Util
                 if (task.Continuation != null)
                     QueueTask(task.Continuation);
             }
-            catch (Exception)
+            catch (Exception e)
             {
                 // ignored
+                Debug.Write(e);
             }
+        }
+
+        public static PriorityTask StartNew(Action action, int priority)
+        {
+            var t = new PriorityTask(action, priority);
+            Instance.QueueTask(t);
+            return t;
         }
 
         public static PositionedTask StartNew(Action action, EntityPosition position)
@@ -187,18 +197,18 @@ namespace VoxelWorldEngine.Util
             return t;
         }
 
-        public class PositionedTask
+        public class PriorityTask
         {
-            public EntityPosition Position { get; set; }
-
             public Action Action { get; }
 
-            public PositionedTask Continuation { get; set; }
+            public PriorityTask Continuation { get; set; }
 
-            public PositionedTask(Action action, EntityPosition position)
+            public int Priority { get; set; }
+
+            public PriorityTask(Action action, int priority)
             {
                 Action = action;
-                Position = position;
+                Priority = priority;
             }
 
             public void Run()
@@ -206,25 +216,48 @@ namespace VoxelWorldEngine.Util
                 Action();
             }
 
-            int lastScore = -1;
-            public int Score(EntityPosition other)
+            public PriorityTask ContinueWith(Action<PriorityTask> action)
             {
-                lastScore = (int)Math.Round(other.RelativeTo(Position).LengthSquared());
-                return lastScore;
-            }
-
-            public PositionedTask ContinueWith(Action<PositionedTask> action)
-            {
-                Continuation = new PositionedTask(() =>
+                Continuation = new PriorityTask(() =>
                 {
                     action(this);
-                }, Position);
+                }, Priority);
                 return Continuation;
+            }
+
+            public virtual void UpdatePriority(EntityPosition watcher)
+            {
             }
 
             public override string ToString()
             {
-                return $"{{Last computed score:{lastScore}}}";
+                return $"{{Priority: {Priority}}}";
+            }
+        }
+
+        public class PositionedTask : PriorityTask
+        {
+            public EntityPosition Position { get; set; }
+
+            public PositionedTask(Action action, EntityPosition position)
+                : base(action, -1)
+            {
+                Position = position;
+            }
+
+            public override void UpdatePriority(EntityPosition other)
+            {
+                Priority = (int)Math.Round(other.RelativeTo(Position).LengthSquared());
+            }
+
+            public PositionedTask ContinueWith(Action<PositionedTask> action)
+            {
+                var continuation = new PositionedTask(() =>
+                {
+                    action(this);
+                }, Position);
+                Continuation = continuation;
+                return continuation;
             }
         }
 

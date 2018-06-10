@@ -4,5 +4,8 @@
 /VoxelWorldEngine/Content/obj
 /VoxelWorldEngine/bin
 /VoxelWorldEngine/obj
+/SharpRiff/bin
+/SharpRiff/obj
 _ReSharper.*
 /.vs
+/Saves/

@@ -20,10 +20,10 @@ namespace VoxelWorldEngine.Rendering
         //private Model pointLightGeometry;
         //private Model spotLightGeometry;
 
-        public RenderTarget2D Colors { get; }
-        public RenderTarget2D Albedo { get; }
-        public RenderTarget2D Normals { get; }
-        public RenderTarget2D Depth { get; }
+        public RenderTarget2D Colors { get; private set; }
+        public RenderTarget2D Albedo { get; private set; }
+        public RenderTarget2D Normals { get; private set; }
+        public RenderTarget2D Depth { get; private set; }
 
         public Color ClearColor { get; set; } = new Color(Color.CornflowerBlue, 0);
 
@@ -57,17 +57,7 @@ namespace VoxelWorldEngine.Rendering
 
             _bufferTextureSize = new Vector2(width, height);
 
-#if OPENGL
-            Colors = new RenderTarget2D(GraphicsDevice, width, height, false, SurfaceFormat.HalfVector4, DepthFormat.Depth24Stencil8);
-            Albedo = new RenderTarget2D(GraphicsDevice, width, height, false, SurfaceFormat.HalfVector4, DepthFormat.Depth24Stencil8);
-            Normals = new RenderTarget2D(GraphicsDevice, width, height, false, SurfaceFormat.HalfVector4, DepthFormat.Depth24Stencil8);
-            Depth = new RenderTarget2D(GraphicsDevice, width, height, false, SurfaceFormat.Vector2, DepthFormat.Depth24Stencil8);
-#else
-            Colors = new RenderTarget2D(GraphicsDevice, width, height, false, SurfaceFormat.Rgba64, DepthFormat.Depth24Stencil8);
-            Albedo = new RenderTarget2D(GraphicsDevice, width, height, false, SurfaceFormat.Rgba64, DepthFormat.Depth24Stencil8);
-            Normals = new RenderTarget2D(GraphicsDevice, width, height, false, SurfaceFormat.Rgba64, DepthFormat.Depth24Stencil8);
-            Depth = new RenderTarget2D(GraphicsDevice, width, height, false, SurfaceFormat.Vector2, DepthFormat.Depth24Stencil8);
-#endif
+            CreateRenderTargets(width, height);
 
             _gBufferTargets = new[] {
                 new RenderTargetBinding(Colors),
@@ -82,6 +72,31 @@ namespace VoxelWorldEngine.Rendering
 
             //pointLightGeometry = content.Load<Model>("PointLightGeometry");
             //spotLightGeometry = content.Load<Model>("SpotLightGeometry");
+
+            VoxelGame.Instance.ResolutionChanged += (sender, args) =>
+            {
+                CreateRenderTargets(args.BackBufferWidth, args.BackBufferHeight);
+            };
+        }
+
+        private void CreateRenderTargets(int width, int height)
+        {
+            Colors?.Dispose();
+            Albedo?.Dispose();
+            Normals?.Dispose();
+            Depth?.Dispose();
+
+#if OPENGL
+            Colors = new RenderTarget2D(GraphicsDevice, width, height, false, SurfaceFormat.HalfVector4, DepthFormat.Depth24Stencil8);
+            Albedo = new RenderTarget2D(GraphicsDevice, width, height, false, SurfaceFormat.HalfVector4, DepthFormat.Depth24Stencil8);
+            Normals = new RenderTarget2D(GraphicsDevice, width, height, false, SurfaceFormat.HalfVector4, DepthFormat.Depth24Stencil8);
+            Depth = new RenderTarget2D(GraphicsDevice, width, height, false, SurfaceFormat.Vector2, DepthFormat.Depth24Stencil8);
+#else
+            Colors = new RenderTarget2D(GraphicsDevice, width, height, false, SurfaceFormat.Rgba64, DepthFormat.Depth24Stencil8);
+            Albedo = new RenderTarget2D(GraphicsDevice, width, height, false, SurfaceFormat.Rgba64, DepthFormat.Depth24Stencil8);
+            Normals = new RenderTarget2D(GraphicsDevice, width, height, false, SurfaceFormat.Rgba64, DepthFormat.Depth24Stencil8);
+            Depth = new RenderTarget2D(GraphicsDevice, width, height, false, SurfaceFormat.Vector2, DepthFormat.Depth24Stencil8);
+#endif
         }
 
         public void Draw(GameTime gameTime, IEnumerable<IRenderable> renderables, LightManager lights, BaseCamera camera, RenderTarget2D output)

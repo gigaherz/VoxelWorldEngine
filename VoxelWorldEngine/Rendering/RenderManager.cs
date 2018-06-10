@@ -1,16 +1,12 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using Microsoft.Xna.Framework.Input;
-using VoxelWorldEngine.Rendering;
 using VoxelWorldEngine.Util;
-using DirectionalLight = VoxelWorldEngine.Rendering.DirectionalLight;
 
-namespace VoxelWorldEngine
+namespace VoxelWorldEngine.Rendering
 {
     class RenderManager : DrawableGameComponent
     {
@@ -69,9 +65,22 @@ namespace VoxelWorldEngine
             _lightManager.AddLight(new DirectionalLight(new Vector3(-2f, -1f, -1f), new Color(1.0f, 1.0f, 0.5f), 0.5f));
             _lightManager.AddLight(new DirectionalLight(new Vector3(2f, -1f, -1f), new Color(0.5f, 1.0f, 1.0f), 0.3f));
             _ssao = new SSAO(Game, Game.Content, parameters.BackBufferWidth, parameters.BackBufferHeight);
-            _outputRenderTarget = new RenderTarget2D(GraphicsDevice, parameters.BackBufferWidth, parameters.BackBufferHeight, false, SurfaceFormat.Color, DepthFormat.Depth24Stencil8);
+
+            CreateRenderTargets(parameters.BackBufferWidth, parameters.BackBufferHeight);
 
             CurrentEffect = TerrainDrawEffect;
+
+            VoxelGame.Instance.ResolutionChanged += (sender, args) =>
+            {
+                CreateRenderTargets(parameters.BackBufferWidth, parameters.BackBufferHeight);
+            };
+        }
+
+        private void CreateRenderTargets(int width, int height)
+        {
+            _outputRenderTarget?.Dispose();
+            _outputRenderTarget = new RenderTarget2D(GraphicsDevice, width, height,
+                false, SurfaceFormat.Color, DepthFormat.Depth24Stencil8);
         }
 
         public override void Update(GameTime gameTime)

@@ -71,7 +71,8 @@
     <Compile Include="Rendering\MeshBuilderManager.cs" />
     <Compile Include="Rendering\SSAO.cs" />
     <Compile Include="Rendering\VertexFormats.cs" />
-    <Compile Include="RenderManager.cs" />
+    <Compile Include="Rendering\RenderManager.cs" />
+    <Compile Include="Storage\CrappyChunkStorage.cs" />
     <Compile Include="Storage\DataSystem.cs" />
     <Compile Include="Terrain\GenerationContext.cs" />
     <Compile Include="Terrain\Graphics\TileGraphics.cs" />
