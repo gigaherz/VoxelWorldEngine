@@ -40,6 +40,8 @@
     <CodeAnalysisRuleSet>MinimumRecommendedRules.ruleset</CodeAnalysisRuleSet>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="Noise\Coherent.cs" />
+    <Compile Include="Noise\NoiseOctaves.cs" />
     <Compile Include="PlayerController.cs" />
     <Compile Include="Rendering\BaseCamera.cs" />
     <Compile Include="Rendering\FullscreenQuad.cs" />

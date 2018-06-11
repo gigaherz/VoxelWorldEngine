@@ -18,10 +18,10 @@ namespace VoxelWorldEngine.Terrain
     public class Tile : GameComponent
     {
         // Tile properties
-        private static readonly int RealSizeH = 16;
-        private static readonly int RealSizeV = 16;
-        private static readonly int GridSizeH = 16;
-        private static readonly int GridSizeV = 16;
+        private static readonly int RealSizeH = 32;
+        private static readonly int RealSizeV = 32;
+        private static readonly int GridSizeH = 32;
+        private static readonly int GridSizeV = 32;
         private static readonly float VoxelSizeH = RealSizeH / (float)GridSizeH;
         private static readonly float VoxelSizeV = RealSizeV / (float)GridSizeV;
         public static readonly Vector3I GridSize = new Vector3I(GridSizeH, GridSizeV, GridSizeH);
@@ -173,7 +173,9 @@ namespace VoxelWorldEngine.Terrain
 #endif
         void GenTerrain()
         {
+#if INSTRUMENT
             var stopwatchGen0 = new Stopwatch();
+#endif
 
             lock (_lock)
             {

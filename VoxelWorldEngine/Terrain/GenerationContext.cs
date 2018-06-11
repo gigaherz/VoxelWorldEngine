@@ -7,13 +7,13 @@ namespace VoxelWorldEngine.Terrain
 {
     public class GenerationContext
     {
-        public Simplex PerlinDensity { get; }
-        public Simplex PerlinHeight { get; }
-        public Simplex PerlinRoughness { get; }
-        public Simplex PerlinSharpness { get; }
-        public Simplex PerlinOffset { get; }
+        public NoiseOctaves PerlinDensity { get; }
+        public NoiseOctaves PerlinHeight { get; }
+        public NoiseOctaves PerlinRoughness { get; }
+        public NoiseOctaves PerlinSharpness { get; }
+        public NoiseOctaves PerlinOffset { get; }
 
-        public int Seed { get; } = (int)DateTime.UtcNow.Ticks;
+        public int Seed { get; } = 1234512345; // (int)(DateTime.UtcNow.Ticks % 2147483647);
 
         // Basic Terrain configuration
         public int HeightAmplitude = 256;
@@ -120,7 +120,7 @@ namespace VoxelWorldEngine.Terrain
         {
             var baseDensity = 0.5 - Math.Max(0, Math.Min(1, (pxyz.Y - bottom) / (top - bottom)));
 
-            var nxyz = pxyz * Tile.VoxelSize / 128.0f;
+            var nxyz = pxyz * Tile.VoxelSize * (1 / 128.0f);
 
             var noise = 0.15 * PerlinDensity.Noise(nxyz.X, nxyz.Y, nxyz.Z, 4);
 

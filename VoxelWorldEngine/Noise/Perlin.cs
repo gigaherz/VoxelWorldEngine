@@ -1,353 +1,156 @@
 ﻿using System;
+using System.Runtime.CompilerServices;
+using Microsoft.Xna.Framework;
 using VoxelWorldEngine.Maths;
 using VoxelWorldEngine.Util;
 
 namespace VoxelWorldEngine.Noise
 {
-    /* Coherent noise function over 1, 2 or 3 dimensions */
-    /* (copyright Ken Perlin) */
-
-    public abstract class PerlinCommon
+    public class Perlin : NoiseOctaves
     {
-        protected const int B = 0x100;
-        protected const int BM = 0xff;
-        protected const int N = 0x1000;
-
-        protected static double SCurve(double t)
-        {
-            return t * t * (3.0 - 2.0 * t);
-        }
-
-        protected static double Lerp(double t, double a, double b)
-        {
-            return a + t * (b - a);
-        }
-
-        protected static void Setup(double vec, out int b0, out int b1, out double r0, out double r1)
-        {
-            var t = vec + N;
-            b0 = (int)t & BM;
-            b1 = (b0 + 1) & BM;
-            r0 = t - (int)t;
-            r1 = r0 - 1.0;
-        }
-
-        protected readonly Random R;
-        protected int[] P = new int[B + B + 2];
-        protected bool FirstRun = true;
-
-        protected PerlinCommon()
-        {
-            R = new Random();
-        }
-
-        protected PerlinCommon(int seed)
-        {
-            R = new Random(seed);
-        }
-
-    }
-
-    public class Perlin1D : PerlinCommon
-    {
-        private readonly double[] _g1 = new double[B + B + 2];
-
-        public Perlin1D(int seed)
-            : base(seed)
+        public Perlin(int seed) : base(seed)
         {
         }
 
-        public void Initialize()
+        protected override double SingleNoise(double x, double y)
         {
-            if (!FirstRun) return;
-
-            FirstRun = false;
-
-            int i;
-            for (i = 0; i < B; i++)
-            {
-                P[i] = i;
-                _g1[i] = R.NextDouble() * 2 - 1;
-            }
-
-            while (--i > 0)
-            {
-                var j = R.Next(B);
-                var k = P[i];
-                P[i] = P[j];
-                P[j] = k;
-            }
-
-            for (i = 0; i < B + 2; i++)
-            {
-                P[B + i] = P[i];
-                _g1[B + i] = _g1[i];
-            }
+            return PerlinNoise.Noise(x, y);
         }
 
-        private double Noise1(double x)
+        protected override double SingleNoise(double x, double y, double z)
         {
-            int bx0, bx1;
-            double rx0, rx1;
-
-            Setup(x, out bx0, out bx1, out rx0, out rx1);
-
-            var i = P[bx0];
-            var j = P[bx1];
-
-            var sx = SCurve(rx0);
-            var u = rx0 * _g1[i];
-            var v = rx1 * _g1[j];
-
-            return Lerp(sx, u, v);
-        }
-
-        /* --- My harmonic summing functions - PDB --------------------------*/
-
-        /*
-           In what follows "alpha" is the Weight when the sum is formed.
-           Typically it is 2, As this approaches 1 the function is noisier.
-           "beta" is the harmonic scaling/spacing, typically 2.
-        */
-
-        public double Noise(double x, int n, double alpha = 2, double beta = 2)
-        {
-            double sum = 0;
-            double scale = 1;
-
-            for (int i = 0; i < n; i++)
-            {
-                var val = Noise1(x);
-                sum += val / scale;
-                scale *= alpha;
-                x *= beta;
-            }
-            return sum;
+            return PerlinNoise.Noise(x, y, z);
         }
     }
 
-    public class Perlin2D : PerlinCommon
+    public static class PerlinNoise
     {
-        private readonly Vector2D[] _g2 = new Vector2D[B + B + 2];
+        private static readonly SimplexNoise.Grad3[] Gradients = SimplexNoise.Gradients;
+        private static readonly int[] PermMod12 = SimplexNoise.PermMod12;
+        // To remove the need for index wrapping, double the permutation table length
+        private static readonly int[] Perm = SimplexNoise.Perm;
 
-        public Perlin2D(int seed)
-            : base(seed)
+        // This method is a *lot* faster than using (int)Math.floor(x)
+        private static int fastfloor(double x)
         {
+            int xi = (int)x;
+            return x < xi ? xi - 1 : xi;
         }
 
-        public void Initialize()
+        public static double Noise(double x)
         {
-            if (!FirstRun) return;
+            int ix = fastfloor(x);
+            double fx0 = x - ix;
+            double fx1 = fx0 - 1;
+            int jx = ix & 255;
 
-            FirstRun = false;
+            int index = PermMod12[jx];
+            int index1 = PermMod12[jx + 1];
+            var g0 = Gradients[index];
+            var g1 = Gradients[index1];
 
-            int i;
-            for (i = 0; i < B; i++)
-            {
-                P[i] = i;
-
-                var v1 = R.NextDouble() * 2 - 1;
-                var v2 = R.NextDouble() * 2 - 1;
-                double s = 0;
-                s += v1 * v1;
-                s += v2 * v2;
-                s = Math.Sqrt(s);
-                _g2[i].X = v1 / s;
-                _g2[i].Y = v2 / s;
-            }
-
-            while (--i > 0)
-            {
-                var j = R.Next(B);
-                var k = P[i];
-                P[i] = P[j];
-                P[j] = k;
-            }
-
-            for (i = 0; i < B + 2; i++)
-            {
-                P[B + i] = P[i];
-                _g2[B + i] = _g2[i];
-            }
+            double vx0 = g0.x * fx0;
+            double vx1 = g1.x * fx1;
+            return vx0 + fx0 * (vx1 - vx0);
         }
 
-        private double Noise2(double x, double y)
+        public static double Noise(double x, double y)
         {
-            int bx0, bx1;
-            double rx0, rx1;
-            Setup(x, out bx0, out bx1, out rx0, out rx1);
+            int ix = fastfloor(x);
+            double fx0 = x - ix;
+            double fx1 = fx0 - 1;
+            int jx = ix & 255;
 
-            int by0, by1;
-            double ry0, ry1;
-            Setup(y, out by0, out by1, out ry0, out ry1);
+            int iy = fastfloor(y);
+            double fy0 = y - iy;
+            double fy1 = fy0 - 1;
+            int jy = iy & 255;
 
-            var i = P[bx0];
-            var j = P[bx1];
+            var py = Perm[jy];
+            int index = PermMod12[jx + py];
+            int index1 = PermMod12[jx + 1 + py];
+            var g0 = Gradients[index];
+            var g1 = Gradients[index1];
 
-            var b00 = P[i + by0];
-            var b10 = P[j + by0];
-            var b01 = P[i + by1];
-            var b11 = P[j + by1];
+            double vx0 = g0.x * fx0 + g0.y * fy0;
+            double vx1 = g1.x * fx1 + g0.x * fy0;
+            double vy0 = vx0 + fx0 * (vx1 - vx0);
 
-            var sx = SCurve(rx0);
-            var sy = SCurve(ry0);
+            var py1 = Perm[jy + 1];
+            int index2 = PermMod12[jx + py1];
+            int index3 = PermMod12[jx + 1 + py1];
+            var g2 = Gradients[index2];
+            var g3 = Gradients[index3];
 
-            var q = _g2[b00]; var u = q.Dot(rx0, ry0);
-            q = _g2[b10]; var v = q.Dot(rx1, ry0);
-            var a = Lerp(sx, u, v);
+            vx0 = g2.x * fx0 + g2.y * fy1;
+            vx1 = g3.x * fx1 + g3.y * fy1;
+            double vy1 = vx0 + fx0 * (vx1 - vx0);
 
-            q = _g2[b01]; u = q.Dot(rx0, ry1);
-            q = _g2[b11]; v = q.Dot(rx1, ry1);
-            var b = Lerp(sx, u, v);
-
-            return Lerp(sy, a, b);
+            return vy0 + fy0 * (vy1 - vy0);
         }
 
-        /* --- My harmonic summing functions - PDB --------------------------*/
-
-        /*
-           In what follows "alpha" is the Weight when the sum is formed.
-           Typically it is 2, As this approaches 1 the function is noisier.
-           "beta" is the harmonic scaling/spacing, typically 2.
-        */
-
-        public double Noise(double x, double y, int n, double alpha = 2, double beta = 2)
+        public static double Noise(double x, double y, double z)
         {
-            double sum = 0;
-            double scale = 1;
+            int ix = fastfloor(x);
+            double fx0 = x - ix;
+            double fx1 = fx0 - 1;
+            int jx = ix & 255;
 
-            for (int i = 0; i < n; i++)
-            {
-                var val = Noise2(x, y);
-                sum += val / scale;
-                scale *= alpha;
-                x *= beta;
-                y *= beta;
-            }
-            return sum;
-        }
-    }
+            int iy = fastfloor(y);
+            double fy0 = y - iy;
+            double fy1 = fy0 - 1;
+            int jy = iy & 255;
 
-    public class Perlin3D : PerlinCommon
-    {
-        private readonly Vector3D[] _g3 = new Vector3D[B + B + 2];
+            int iz = fastfloor(z);
+            double fz0 = z - iz;
+            double fz1 = fz0 - 1;
+            int jz = iz & 255;
 
-        public Perlin3D(int seed)
-            : base(seed)
-        {
-        }
+            var pz = Perm[jz];
+            var pyz = Perm[jy + pz];
+            int index = PermMod12[jx + pyz];
+            int index1 = PermMod12[jx + 1 + pyz];
+            var g0 = Gradients[index];
+            var g1 = Gradients[index1];
 
-        public void Initialize()
-        {
-            if (!FirstRun) return;
+            double vx0 = g0.x * fx0 + g0.y * fy0 + g0.z * fz0;
+            double vx1 = g1.x * fx1 + g1.y * fy0 + g1.z * fz0;
+            double vy0 = vx0 + fx0 * (vx1 - vx0);
 
-            FirstRun = false;
+            var py1z = Perm[jy + 1 + pz];
+            int index2 = PermMod12[jx + py1z];
+            int index3 = PermMod12[jx + 1 + py1z];
+            var g2 = Gradients[index2];
+            var g3 = Gradients[index3];
 
-            int i;
-            for (i = 0; i < B; i++)
-            {
-                P[i] = i;
+            vx0 = g2.x * fx0 + g2.y * fy1 + g2.z * fz0;
+            vx1 = g3.x * fx1 + g3.y * fy1 + g3.z * fz0;
+            double vy1 = vx0 + fx0 * (vx1 - vx0);
+            double vz0 = vy0 + fy0 * (vy1 - vy0);
 
-                var v1 = R.NextDouble() * 2 - 1;
-                var v2 = R.NextDouble() * 2 - 1;
-                var v3 = R.NextDouble() * 2 - 1;
-                double s = 0;
-                s += v1 * v1;
-                s += v2 * v2;
-                s += v3 * v3;
-                s = Math.Sqrt(s);
-                _g3[i].X = v1 / s;
-                _g3[i].Y = v2 / s;
-                _g3[i].Z = v3 / s;
-            }
+            var pz1 = Perm[jz + 1];
+            var pzy1 = Perm[jy + pz1];
+            int index4 = PermMod12[jx + pzy1];
+            int index5 = PermMod12[jx + 1 + pzy1];
+            var g4 = Gradients[index4];
+            var g5 = Gradients[index5];
 
-            while (--i > 0)
-            {
-                var j = R.Next(B);
-                var k = P[i];
-                P[i] = P[j];
-                P[j] = k;
-            }
+            vx0 = g4.x * fx0 + g4.y * fy0 + g4.z * fz1;
+            vx1 = g5.x * fx1 + g5.y * fy0 + g5.z * fz1;
+            vy0 = vx0 + fx0 * (vx1 - vx0);
 
-            for (i = 0; i < B + 2; i++)
-            {
-                P[B + i] = P[i];
-                _g3[B + i] = _g3[i];
-            }
-        }
+            var py1z1 = Perm[jy + 1 + pz1];
+            int index6 = PermMod12[jx + py1z1];
+            int index7 = PermMod12[jx + 1 + py1z1];
+            var g6 = Gradients[index6];
+            var g7 = Gradients[index7];
 
-        private double Noise3(double x, double y, double z)
-        {
-            int bx0, bx1;
-            double rx0, rx1;
-            Setup(x, out bx0, out bx1, out rx0, out rx1);
+            vx0 = g6.x * fx0 + g6.y * fy1 + g6.z * fz1;
+            vx1 = g7.x * fx1 + g7.y * fy1 + g7.z * fz1;
+            vy1 = vx0 + fx0 * (vx1 - vx0);
+            double vz1 = vy0 + fy0 * (vy1 - vy0);
 
-            int by0, by1;
-            double ry0, ry1;
-            Setup(y, out by0, out by1, out ry0, out ry1);
-
-            int bz0, bz1;
-            double rz0, rz1;
-            Setup(z, out bz0, out bz1, out rz0, out rz1);
-
-            var i = P[bx0];
-            var j = P[bx1];
-
-            var b00 = P[i + by0];
-            var b10 = P[j + by0];
-            var b01 = P[i + by1];
-            var b11 = P[j + by1];
-
-            var t = SCurve(rx0);
-            var sy = SCurve(ry0);
-            var sz = SCurve(rz0);
-
-            var u = _g3[b00 + bz0].Dot(rx0, ry0, rz0);
-            var v = _g3[b10 + bz0].Dot(rx1, ry0, rz0);
-            var a = Lerp(t, u, v);
-
-            u = _g3[b01 + bz0].Dot(rx0, ry1, rz0);
-            v = _g3[b11 + bz0].Dot(rx1, ry1, rz0);
-            var b = Lerp(t, u, v);
-
-            var c = Lerp(sy, a, b);
-
-            u = _g3[b00 + bz1].Dot(rx0, ry0, rz1);
-            v = _g3[b10 + bz1].Dot(rx1, ry0, rz1);
-            a = Lerp(t, u, v);
-
-            u = _g3[b01 + bz1].Dot(rx0, ry1, rz1);
-            v = _g3[b11 + bz1].Dot(rx1, ry1, rz1);
-            b = Lerp(t, u, v);
-
-            var d = Lerp(sy, a, b);
-
-            return Lerp(sz, c, d);
-        }
-
-        /* --- My harmonic summing functions - PDB --------------------------*/
-
-        /*
-           In what follows "alpha" is the Weight when the sum is formed.
-           Typically it is 2, As this approaches 1 the function is noisier.
-           "beta" is the harmonic scaling/spacing, typically 2.
-        */
-
-        public double Noise(double x, double y, double z, int n, double alpha = 2, double beta = 2)
-        {
-            double sum = 0;
-            double scale = 1;
-
-            for (int i = 0; i < n; i++)
-            {
-                var val = Noise3(x, y, z);
-                sum += val / scale;
-                scale *= alpha;
-                x *= beta;
-                y *= beta;
-                z *= beta;
-            }
-            return sum;
+            return vz0 + fz0 * (vz1 - vz0);
         }
     }
 }
