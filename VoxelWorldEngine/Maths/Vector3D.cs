@@ -32,6 +32,8 @@ namespace VoxelWorldEngine.Maths
             return $"({X},{Y},{Z})";
         }
 
+        public Vector2D XZ => new Vector2D(X, Z);
+
         public static Vector3D operator -(Vector3D a, Vector3D b)
         {
             return new Vector3D(

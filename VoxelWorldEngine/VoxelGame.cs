@@ -220,7 +220,8 @@ namespace VoxelWorldEngine
                                $" Pending tiles: {Grid.PendingTiles}; Queued tasks: {PriorityScheduler.Instance.QueuedTaskCount};" +
                                $" Player At: {_playerController.PlayerPosition}; Angles: {_playerController.PlayerOrientation};"+
                                $" Target: {_playerController.PlayerPositionTarget}" +
-                               $" Mouse: {MouseDelta}";
+                               $" Mouse: {MouseDelta}" +
+                               $" Generation Phase: {Grid.saveInitializationPhase}";
                 lastFpsUpdate = now;
             }
         }

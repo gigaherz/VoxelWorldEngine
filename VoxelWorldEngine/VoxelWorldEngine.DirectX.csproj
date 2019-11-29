@@ -61,9 +61,10 @@
     <Compile Include="Rendering\SSAO.cs" />
     <Compile Include="Rendering\MeshBuilderManager.cs" />
     <Compile Include="Storage\CrappyChunkStorage.cs" />
+    <Compile Include="Terrain\Graphics\GridGraphics.cs" />
     <Compile Include="Terrain\Graphics\TileMesh.cs" />
-    <Compile Include="Storage\DataSystem.cs" />
     <Compile Include="Terrain\GenerationContext.cs" />
+    <Compile Include="Util\TaskInProgress.cs" />
     <Compile Include="Util\OcTree.cs" />
     <Compile Include="Util\SingleAccessVerify.cs" />
     <Compile Include="Terrain\Graphics\TileGraphics.cs" />

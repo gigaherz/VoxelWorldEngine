@@ -11,8 +11,8 @@ namespace VoxelWorldEngine.Util
         public static PriorityScheduler Instance = new PriorityScheduler();
 
         private readonly List<PriorityTask> _tasks = new List<PriorityTask>();
-        private readonly Semaphore _awaitTasks = new Semaphore(0, 1);
-        private readonly ReaderWriterLockSlim _lockTasks = new ReaderWriterLockSlim();
+        private readonly AutoResetEvent _awaitTasks = new AutoResetEvent(false);
+        
 
         private Thread[] _threads;
         public int MaximumConcurrencyLevel { get; set; } = Math.Max(1, Environment.ProcessorCount - 1);
@@ -44,13 +44,11 @@ namespace VoxelWorldEngine.Util
 
             if (distance > 5 && Environment.TickCount - before >= 1000)
             {
-                _lockTasks.EnterWriteLock();
+                lock(_tasks)
                 {
                     foreach(var task in _tasks)
                         task.UpdatePriority(_lastPlayerPosition);
-                    _tasks.Sort((a, b) => -Math.Sign(a.Priority - b.Priority));
                 }
-                _lockTasks.ExitWriteLock();
                 _lastPlayerPosition = newPosition;
                 before = Environment.TickCount;
             }
@@ -63,27 +61,32 @@ namespace VoxelWorldEngine.Util
                 PriorityTask task = null;
                 try
                 {
-                    _lockTasks.EnterReadLock();
+                    _awaitTasks.WaitOne();
+                    lock (_tasks)
                     {
-                        bool lockAcquired = _awaitTasks.WaitOne(0);
-                        if (!lockAcquired)
+                        if (_tasks.Count > 0)
                         {
-                            _lockTasks.ExitReadLock();
-                            lockAcquired = _awaitTasks.WaitOne();
-                            _lockTasks.EnterReadLock();
-                        }
-
-                        if (lockAcquired)
-                        {
-                            task = _tasks[_tasks.Count - 1];
-                            _tasks.RemoveAt(_tasks.Count-1);
+                            int minIndex = int.MaxValue;
+                            int minPriority = int.MaxValue;
+                            for (int i = 0; i < _tasks.Count; i++)
+                            {
+                                var t = _tasks[i];
+                                int p = t.Priority;
+                                if (p < minPriority || task == null)
+                                {
+                                    minIndex = i;
+                                    task = t;
+                                    minPriority = p;
+                                }
+                            }
+                            _tasks[minIndex] = _tasks[_tasks.Count - 1];
+                            _tasks.RemoveAt(_tasks.Count - 1);
                             if (_tasks.Count > 0)
                             {
-                                _awaitTasks.Release();
+                                _awaitTasks.Set();
                             }
                         }
                     }
-                    _lockTasks.ExitReadLock();
                 }
                 catch (ObjectDisposedException)
                 {
@@ -93,7 +96,8 @@ namespace VoxelWorldEngine.Util
                 {
                     yield break;
                 }
-                yield return task;
+                if (task != null)
+                    yield return task;
             }
         }
 
@@ -102,63 +106,11 @@ namespace VoxelWorldEngine.Util
             var pos = _lastPlayerPosition;
             task.UpdatePriority(pos);
 
-            _lockTasks.EnterWriteLock();
+            lock(_tasks)
             {
-                var score = task.Priority;
-                bool inserted = false;
-
-                if (_tasks.Count > 0)
-                {
-                    if (score > _tasks[0].Priority)
-                    {
-                        inserted = true;
-                        _tasks.Insert(0, task);
-                    }
-                    else if (score > _tasks[_tasks.Count - 1].Priority)
-                    {
-                        int left = 0;
-                        int right = _tasks.Count - 1;
-                        while (right > left)
-                        {
-                            var center = (left + right) / 2;
-                            if (center == left)
-                            {
-                                inserted = true;
-                                _tasks.Insert(right, task);
-                                break;
-                            }
-
-                            var centerScore = _tasks[center].Priority;
-                            if (score == centerScore)
-                            {
-                                if (right == center + 1)
-                                {
-                                    inserted = true;
-                                    _tasks.Insert(right, task);
-                                    break;
-                                }
-                                right = center + 1;
-                            }
-                            else if (score > centerScore)
-                            {
-                                right = center;
-                            }
-                            else
-                            {
-                                left = center;
-                            }
-                        }
-                    }
-                }
-
-                if (!inserted) _tasks.Add(task);
-
-                if (_tasks.Count == 1)
-                {
-                    _awaitTasks.Release();
-                }
+                _tasks.Add(task);
+                _awaitTasks.Set();
             }
-            _lockTasks.ExitWriteLock();
         }
 
         private void ThreadProc()
@@ -167,14 +119,13 @@ namespace VoxelWorldEngine.Util
                 TryExecuteTask(t);
         }
 
-        int cnt = 0;
         private void TryExecuteTask(PriorityTask task)
         {
             try
             {
                 task.Run();
-                if (task.Continuation != null)
-                    QueueTask(task.Continuation);
+                foreach (var cont in task.Continuations)
+                    QueueTask(cont);
             }
             catch (Exception e)
             {
@@ -201,7 +152,9 @@ namespace VoxelWorldEngine.Util
         {
             public Action Action { get; }
 
-            public PriorityTask Continuation { get; set; }
+            public List<PriorityTask> Continuations { get; } = new List<PriorityTask>();
+
+            public event Action<PriorityTask> OnCompleted;
 
             public int Priority { get; set; }
 
@@ -214,15 +167,17 @@ namespace VoxelWorldEngine.Util
             public void Run()
             {
                 Action();
+                OnCompleted?.Invoke(this);
             }
 
             public PriorityTask ContinueWith(Action<PriorityTask> action)
             {
-                Continuation = new PriorityTask(() =>
+                var cont = new PriorityTask(() =>
                 {
                     action(this);
                 }, Priority);
-                return Continuation;
+                Continuations.Add(cont);
+                return cont;
             }
 
             public virtual void UpdatePriority(EntityPosition watcher)
@@ -256,7 +211,7 @@ namespace VoxelWorldEngine.Util
                 {
                     action(this);
                 }, Position);
-                Continuation = continuation;
+                Continuations.Add(continuation);
                 return continuation;
             }
         }

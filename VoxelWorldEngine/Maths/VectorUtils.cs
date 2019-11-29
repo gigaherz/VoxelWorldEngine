@@ -34,6 +34,11 @@ namespace VoxelWorldEngine.Maths
             return new Vector2(vector3.X, vector3.Z);
         }
 
+        public static Vector2D XZ(Vector3D vector3)
+        {
+            return new Vector2D(vector3.X, vector3.Z);
+        }
+
         public static Vector3I FloorToInt(this Vector3 a)
         {
             return new Vector3I(

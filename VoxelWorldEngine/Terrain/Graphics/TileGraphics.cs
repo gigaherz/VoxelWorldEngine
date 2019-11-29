@@ -8,6 +8,7 @@ using Microsoft.Xna.Framework.Graphics;
 using VoxelWorldEngine.Maths;
 using VoxelWorldEngine.Objects;
 using VoxelWorldEngine.Rendering;
+using VoxelWorldEngine.Util;
 
 namespace VoxelWorldEngine.Terrain.Graphics
 {
@@ -53,20 +54,7 @@ namespace VoxelWorldEngine.Terrain.Graphics
             if (Interlocked.Exchange(ref Busy, 1) != 0)
                 return false;
 
-#if false
-            stopwatch.Restart();
-            GenMeshes();
-            stopwatch.Stop();
-            var middle = stopwatch.ElapsedMilliseconds;
-            stopwatch.Restart();
-            AfterGenMeshes();
-            stopwatch.Stop();
-            var after = stopwatch.ElapsedMilliseconds;
-
-            Debug.WriteLine($"Generating meshes... a={middle}, b={after}, p=({Tile.IndexX},{Tile.IndexY},{Tile.IndexZ})");
-#else
-            Tile.RunProcess(GenMeshes, 0).ContinueWith(_ => Tile.InvokeAfter(-1, AfterGenMeshes));
-#endif
+            Tile.RunProcess(GenMeshes, 0, "Generating Meshes").ContinueWith(_ => Tile.InvokeAfter(-1, AfterGenMeshes));
 
             return true;
         }
@@ -98,7 +86,8 @@ namespace VoxelWorldEngine.Terrain.Graphics
 
         public void GenMeshes()
         {
-            GenMeshesPlain();
+            using (var unused = new TaskInProgress("GenMeshes", this))
+                GenMeshesPlain();
         }
 
         public void GenMeshesPlain()

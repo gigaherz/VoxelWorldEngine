@@ -8,36 +8,11 @@ namespace VoxelWorldEngine.Noise
 {
     public class Perlin : NoiseOctaves
     {
-        public Perlin(int seed) : base(seed)
+        public Perlin(int seed, double scale) : base(seed, scale)
         {
         }
 
-        protected override double SingleNoise(double x, double y)
-        {
-            return PerlinNoise.Noise(x, y);
-        }
-
-        protected override double SingleNoise(double x, double y, double z)
-        {
-            return PerlinNoise.Noise(x, y, z);
-        }
-    }
-
-    public static class PerlinNoise
-    {
-        private static readonly SimplexNoise.Grad3[] Gradients = SimplexNoise.Gradients;
-        private static readonly int[] PermMod12 = SimplexNoise.PermMod12;
-        // To remove the need for index wrapping, double the permutation table length
-        private static readonly int[] Perm = SimplexNoise.Perm;
-
-        // This method is a *lot* faster than using (int)Math.floor(x)
-        private static int fastfloor(double x)
-        {
-            int xi = (int)x;
-            return x < xi ? xi - 1 : xi;
-        }
-
-        public static double Noise(double x)
+        protected double SingleNoise(double x)
         {
             int ix = fastfloor(x);
             double fx0 = x - ix;
@@ -54,7 +29,7 @@ namespace VoxelWorldEngine.Noise
             return vx0 + fx0 * (vx1 - vx0);
         }
 
-        public static double Noise(double x, double y)
+        protected override double SingleNoise(double x, double y)
         {
             int ix = fastfloor(x);
             double fx0 = x - ix;
@@ -89,7 +64,7 @@ namespace VoxelWorldEngine.Noise
             return vy0 + fy0 * (vy1 - vy0);
         }
 
-        public static double Noise(double x, double y, double z)
+        protected override double SingleNoise(double x, double y, double z)
         {
             int ix = fastfloor(x);
             double fx0 = x - ix;

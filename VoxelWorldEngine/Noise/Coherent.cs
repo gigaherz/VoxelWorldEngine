@@ -8,23 +8,10 @@ namespace VoxelWorldEngine.Noise
 {
     public class Coherent : NoiseOctaves
     {
-        public Coherent(int seed) : base(seed)
+        public Coherent(int seed, double scale) : base(seed, scale)
         {
         }
 
-        protected override double SingleNoise(double x, double y)
-        {
-            return CoherentNoise.Noise(x, y);
-        }
-
-        protected override double SingleNoise(double x, double y, double z)
-        {
-            return CoherentNoise.Noise(x, y, z);
-        }
-    }
-
-    static class CoherentNoise
-    {
         private const int X_NOISE_GEN = 1619;
         private const int Y_NOISE_GEN = 31337;
         private const int Z_NOISE_GEN = 6971;
@@ -37,21 +24,7 @@ namespace VoxelWorldEngine.Noise
             Best
         }
 
-        static double lerp(double a, double b, double t) { return a + t * (b - a); }
-
-        static double sCurve3(double a)
-        {
-            return (a * a * (3.0 - 2.0 * a));
-        }
-
-        static double sCurve5(double a)
-        {
-            double a3 = a * a * a;
-            double a4 = a3 * a;
-            double a5 = a4 * a;
-            return (6.0 * a5) - (15.0 * a4) + (10.0 * a3);
-        }
-        public static double Noise(double x, double y)
+        protected override double SingleNoise(double x, double y)
         {
             // Create a unit-length cube aligned along an integer boundary.  This cube
             // surrounds the input point.
@@ -86,7 +59,7 @@ namespace VoxelWorldEngine.Noise
             return lerp(ix0, ix1, ys);
         }
 
-        static double Gradient(double fx, double fy, int ix, int iy)
+        double Gradient(double fx, double fy, int ix, int iy)
         {
             // Randomly generate a gradient vector given the integer coordinates of the
             // input value.  This implementation generates a random number and uses it
@@ -109,8 +82,7 @@ namespace VoxelWorldEngine.Noise
             return ((xvGradient * xvPoint) + (yvGradient * yvPoint)) + 0.5;
         }
 
-
-        public static double Noise(double x, double y, double z)
+        protected override double SingleNoise(double x, double y, double z)
         {
             // Create a unit-length cube aligned along an integer boundary.  This cube
             // surrounds the input point.
@@ -156,7 +128,7 @@ namespace VoxelWorldEngine.Noise
             return lerp(iy0, iy1, zs);
         }
 
-        static double Gradient(double fx, double fy, double fz, int ix, int iy, int iz)
+        double Gradient(double fx, double fy, double fz, int ix, int iy, int iz)
         {
             // Randomly generate a gradient vector given the integer coordinates of the
             // input value.  This implementation generates a random number and uses it
@@ -181,7 +153,7 @@ namespace VoxelWorldEngine.Noise
             return ((xvGradient * xvPoint) + (yvGradient * yvPoint) + (zvGradient * zvPoint)) + 0.5;
         }
 
-        static readonly double[] RANDOM_VECTORS = {
+        readonly double[] RANDOM_VECTORS = {
             -0.763874, -0.596439, -0.246489, 0.0, 0.396055, 0.904518, -0.158073, 0.0, -0.499004, -0.8665, -0.0131631, 0.0, 0.468724, -0.824756, 0.316346, 0.0,
             0.829598, 0.43195, 0.353816, 0.0, -0.454473, 0.629497, -0.630228, 0.0, -0.162349, -0.869962, -0.465628, 0.0, 0.932805, 0.253451, 0.256198, 0.0,
             -0.345419, 0.927299, -0.144227, 0.0, -0.715026, -0.293698, -0.634413, 0.0, -0.245997, 0.717467, -0.651711, 0.0, -0.967409, -0.250435, -0.037451, 0.0,

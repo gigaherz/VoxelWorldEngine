@@ -75,7 +75,7 @@ namespace VoxelWorldEngine
 
             if (Walking)
             {
-                if (VoxelGame.Instance.Grid.ChunkExists(PlayerPosition))
+                if (VoxelGame.Instance.Grid.saveInitializationPhase > 0 && VoxelGame.Instance.Grid.ChunkExists(PlayerPosition))
                 {
                     if (move.LengthSquared() > 0)
                     {
