@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using VoxelWorldEngine.Util;
 
 namespace VoxelWorldEngine.Noise
 {
@@ -50,13 +51,13 @@ namespace VoxelWorldEngine.Noise
             double n0, n1, ix0, ix1;
             n0 = Gradient(x, y, x0, y0);
             n1 = Gradient(x, y, x1, y0);
-            ix0 = lerp(n0, n1, xs);
+            ix0 = MathX.Lerp(n0, n1, xs);
 
             n0 = Gradient(x, y, x0, y1);
             n1 = Gradient(x, y, x1, y1);
-            ix1 = lerp(n0, n1, xs);
+            ix1 = MathX.Lerp(n0, n1, xs);
 
-            return lerp(ix0, ix1, ys);
+            return MathX.Lerp(ix0, ix1, ys);
         }
 
         double Gradient(double fx, double fy, int ix, int iy)
@@ -112,20 +113,20 @@ namespace VoxelWorldEngine.Noise
             double n0, n1, ix0, ix1, iy0, iy1;
             n0 = Gradient(x, y, z, x0, y0, z0);
             n1 = Gradient(x, y, z, x1, y0, z0);
-            ix0 = lerp(n0, n1, xs);
+            ix0 = MathX.Lerp(n0, n1, xs);
 
             n0 = Gradient(x, y, z, x0, y1, z0);
             n1 = Gradient(x, y, z, x1, y1, z0);
-            ix1 = lerp(n0, n1, xs);
-            iy0 = lerp(ix0, ix1, ys);
+            ix1 = MathX.Lerp(n0, n1, xs);
+            iy0 = MathX.Lerp(ix0, ix1, ys);
             n0 = Gradient(x, y, z, x0, y0, z1);
             n1 = Gradient(x, y, z, x1, y0, z1);
-            ix0 = lerp(n0, n1, xs);
+            ix0 = MathX.Lerp(n0, n1, xs);
             n0 = Gradient(x, y, z, x0, y1, z1);
             n1 = Gradient(x, y, z, x1, y1, z1);
-            ix1 = lerp(n0, n1, xs);
-            iy1 = lerp(ix0, ix1, ys);
-            return lerp(iy0, iy1, zs);
+            ix1 = MathX.Lerp(n0, n1, xs);
+            iy1 = MathX.Lerp(ix0, ix1, ys);
+            return MathX.Lerp(iy0, iy1, zs);
         }
 
         double Gradient(double fx, double fy, double fz, int ix, int iy, int iz)
@@ -153,7 +154,7 @@ namespace VoxelWorldEngine.Noise
             return ((xvGradient * xvPoint) + (yvGradient * yvPoint) + (zvGradient * zvPoint)) + 0.5;
         }
 
-        readonly double[] RANDOM_VECTORS = {
+        private static readonly double[] RANDOM_VECTORS = {
             -0.763874, -0.596439, -0.246489, 0.0, 0.396055, 0.904518, -0.158073, 0.0, -0.499004, -0.8665, -0.0131631, 0.0, 0.468724, -0.824756, 0.316346, 0.0,
             0.829598, 0.43195, 0.353816, 0.0, -0.454473, 0.629497, -0.630228, 0.0, -0.162349, -0.869962, -0.465628, 0.0, 0.932805, 0.253451, 0.256198, 0.0,
             -0.345419, 0.927299, -0.144227, 0.0, -0.715026, -0.293698, -0.634413, 0.0, -0.245997, 0.717467, -0.651711, 0.0, -0.967409, -0.250435, -0.037451, 0.0,

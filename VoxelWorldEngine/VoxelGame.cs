@@ -11,6 +11,7 @@ using VoxelWorldEngine.Objects;
 using VoxelWorldEngine.Rendering;
 using VoxelWorldEngine.Terrain;
 using VoxelWorldEngine.Util;
+using VoxelWorldEngine.Util.Scheduler;
 
 namespace VoxelWorldEngine
 {
@@ -216,7 +217,7 @@ namespace VoxelWorldEngine
             if (frameTimes.Count >= 2 && (now-lastFpsUpdate).TotalSeconds > 0.25)
             {
                 var fps = (frameTimes.Count - 1) / (frameTimes.Last() - frameTimes.Peek()).TotalSeconds;
-                Window.Title = $"FPS: {fps}; Tiles in progress: {Grid.TilesInProgress};" +
+                Window.Title = $"FPS: {fps};" +
                                $" Pending tiles: {Grid.PendingTiles}; Queued tasks: {PriorityScheduler.Instance.QueuedTaskCount};" +
                                $" Player At: {_playerController.PlayerPosition}; Angles: {_playerController.PlayerOrientation};"+
                                $" Target: {_playerController.PlayerPositionTarget}" +

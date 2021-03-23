@@ -14,7 +14,7 @@ namespace VoxelWorldEngine.Noise
 
         protected double SingleNoise(double x)
         {
-            int ix = fastfloor(x);
+            int ix = MathX.FastFloor(x);
             double fx0 = x - ix;
             double fx1 = fx0 - 1;
             int jx = ix & 255;
@@ -31,12 +31,12 @@ namespace VoxelWorldEngine.Noise
 
         protected override double SingleNoise(double x, double y)
         {
-            int ix = fastfloor(x);
+            int ix = MathX.FastFloor(x);
             double fx0 = x - ix;
             double fx1 = fx0 - 1;
             int jx = ix & 255;
 
-            int iy = fastfloor(y);
+            int iy = MathX.FastFloor(y);
             double fy0 = y - iy;
             double fy1 = fy0 - 1;
             int jy = iy & 255;
@@ -66,17 +66,17 @@ namespace VoxelWorldEngine.Noise
 
         protected override double SingleNoise(double x, double y, double z)
         {
-            int ix = fastfloor(x);
+            int ix = MathX.FastFloor(x);
             double fx0 = x - ix;
             double fx1 = fx0 - 1;
             int jx = ix & 255;
 
-            int iy = fastfloor(y);
+            int iy = MathX.FastFloor(y);
             double fy0 = y - iy;
             double fy1 = fy0 - 1;
             int jy = iy & 255;
 
-            int iz = fastfloor(z);
+            int iz = MathX.FastFloor(z);
             double fz0 = z - iz;
             double fz1 = fz0 - 1;
             int jz = iz & 255;

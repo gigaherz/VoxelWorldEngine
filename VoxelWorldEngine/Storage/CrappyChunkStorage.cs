@@ -345,14 +345,18 @@ namespace VoxelWorldEngine.Storage
 
         public void TryLoadTile(Tile tile, Action<bool> action)
         {
+            // TODO: Async... someday.
+
             var index = RegionIndex(tile);
             var name = NameOf(index);
             var rgn = LoadRegionFile(name, index);
 
+            bool b;
             lock (rgn)
             {
-                action(rgn.ReadTile(tile));
+                b = rgn.ReadTile(tile);
             }
+            action(b);
         }
     }
 }

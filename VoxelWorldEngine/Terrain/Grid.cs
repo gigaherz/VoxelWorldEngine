@@ -5,6 +5,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Threading;
+using System.Threading.Tasks;
 using Microsoft.Xna.Framework;
 using VoxelWorldEngine.Maths;
 using VoxelWorldEngine.Objects;
@@ -12,18 +13,19 @@ using VoxelWorldEngine.Registry;
 using VoxelWorldEngine.Rendering;
 using VoxelWorldEngine.Storage;
 using VoxelWorldEngine.Util;
+using VoxelWorldEngine.Util.Performance;
+using VoxelWorldEngine.Util.Scheduler;
 
 namespace VoxelWorldEngine.Terrain
 {
     public class Grid : GameComponent, IRenderableProvider
     {
-        public static int MaxTilesInProgress = PriorityScheduler.Instance.MaximumConcurrencyLevel * 2;
-        public static int MaxTilesQueued = MaxTilesInProgress;
-        public static int LoadRadius = 300;
-        public static int UnloadRadius = 650;
+        public static int TaskThrottleThreshold = PriorityScheduler.Instance.MaximumConcurrencyLevel * 5;
+        public static int LoadRadius = 200;
+        public static int UnloadRadius = 300;
         public static int LoadRange = LoadRadius / Tile.GridSize.X;
         public static int UnloadRange = UnloadRadius / Tile.GridSize.X;
-        public static int SpawnChunksRange = 200 / Tile.GridSize.X;
+        public static int SpawnChunksRange = 0; // 200 / Tile.GridSize.X;
         public static Vector3 LoadScale = new Vector3(1,1,1) / Tile.VoxelSize;
 
         private readonly CubeTree<Tile> _tiles = new CubeTree<Tile>();
@@ -36,14 +38,14 @@ namespace VoxelWorldEngine.Terrain
 
         public int PendingTiles => _pendingTilesList.Count;
 
-        private int _tilesInProgress;
-        public int TilesInProgress => _tilesInProgress;
-
         public EntityPosition SpawnPosition { get; set; }
 
         public Random Random { get; }
 
-        public GenerationContext GenerationContext { get; } = new GenerationContext();
+        public GenerationContext GenerationContext { get; } = new GenerationContext(
+            //new GenerationSettings("VoxelGame".GetHashCode())
+            new GenerationSettings((int)(DateTime.UtcNow.Ticks % 2147483647))
+            );
 
         private CrappyChunkStorage _storage;
 
@@ -72,96 +74,144 @@ namespace VoxelWorldEngine.Terrain
             if (saveInitializationPhase < 1)
                 return;
 
-            var difference = newPosition.RelativeTo(_lastPlayerPosition) * LoadScale;
-            var distance = difference.Length();
-
-            var tp = newPosition.BasePosition;
-            if (!ChunkExists(newPosition))
+            using (Profiler.CurrentProfiler.Begin("Updating Player Visibility"))
             {
-                bootstrap = true;
-            }
+                var difference = newPosition.RelativeTo(_lastPlayerPosition) * LoadScale;
+                var distance = difference.Length();
 
-            if (Environment.TickCount - before <= 1000 || (distance <= 5 && !bootstrap))
-                return;
-
-            Debug.WriteLine("Re-computing visible chunks...");
-
-            before = Environment.TickCount;
-
-            bootstrap = false;
-
-            tempTiles.Clear();
-
-            _tilesLock.EnterReadLock();
-            try
-            {
-                tempTiles.AddRange(UnorderedTiles.Where(tile => Distance(newPosition, tile) > UnloadRadius).Select(t => t.Index));
-            }
-            finally
-            {
-                _tilesLock.ExitReadLock();
-            }
-
-            Debug.WriteLine($"Discarding {tempTiles.Count} tiles...");
-            foreach (var tile in tempTiles)
-            {
-                SetTile(tile, null);
-            }
-
-            lock (_pendingTilesList)
-            {
-                tempTiles.Clear();
-                _pendingTilesSet.Clear();
-                _pendingTilesList.Clear();
-
-                //for (int r = 0; r < LoadRange; r++)
-                var r = LoadRange;
+                var tp = newPosition.BasePosition;
+                if (!TileExists(newPosition))
                 {
-                    for (int z = -r; z <= r; z++)
-                    {
-                        for (int x = -r; x <= r; x++)
-                        {
-                            for (int y = -r; y <= r; y++)
-                            {
-                                if (!((new Vector3D(x, y, z) * LoadScale).Length() <= LoadRange))
-                                    continue;
-
-                                var tpo = tp.Offset(x, y, z);
-                                if (tempTiles.Contains(tpo))
-                                    continue;
-
-                                Tile tile;
-                                if (!Find(tpo, out tile))
-                                {
-                                    tile = new Tile(this, tpo);
-
-                                    SetTile(tpo, tile);
-
-                                    PriorityScheduler.StartNew(() =>
-                                    {
-                                        _storage.TryLoadTile(tile, (loaded) =>
-                                        {
-                                            if (tile.GenerationPhase < 1)
-                                                QueueTile(tile);
-                                        });
-                                    }, -1);
-                                }
-                                else
-                                {
-                                    if (tile.GenerationPhase < 1)
-                                        QueueTile(tile);
-                                }
-                            }
-                        }
-                    }
-                    //if (_pendingTiles.Count >= MaxTilesQueued)
-                    //    break;
+                    bootstrap = true;
                 }
 
-                _lastPlayerPosition = newPosition;
+                if (Environment.TickCount - before <= 1000 || (distance <= 5 && !bootstrap))
+                    return;
 
-                ResortPending();
+                using (Profiler.CurrentProfiler.Begin("Computing Visible Tiles"))
+                {
+                    Debug.WriteLine("Re-computing visible tiles...");
+
+                    before = Environment.TickCount;
+
+                    bootstrap = false;
+
+                    tempTiles.Clear();
+
+                    _tilesLock.EnterReadLock();
+                    try
+                    {
+                        tempTiles.AddRange(UnorderedTiles.Where(tile => Distance(newPosition, tile) > UnloadRadius).Select(t => t.Index));
+                    }
+                    finally
+                    {
+                        _tilesLock.ExitReadLock();
+                    }
+                }
+
+                using (Profiler.CurrentProfiler.Begin("Discarding Inactive Tiles"))
+                {
+                    Debug.WriteLine($"Discarding {tempTiles.Count} tiles...");
+                    foreach (var tile in tempTiles)
+                    {
+                        SetTile(tile, null);
+                    }
+                }
+
+                using (Profiler.CurrentProfiler.Begin("Loading Visible Tiles"))
+                {
+                    lock (_pendingTilesList)
+                    {
+                        tempTiles.Clear();
+                        _pendingTilesSet.Clear();
+                        _pendingTilesList.Clear();
+
+                        //for (int r = 0; r < LoadRange; r++)
+                        var r = LoadRange;
+                        {
+                            for (int z = -r; z <= r; z++)
+                            {
+                                for (int x = -r; x <= r; x++)
+                                {
+                                    for (int y = -r; y <= r; y++)
+                                    {
+                                        if (!((new Vector3D(x, y, z) * LoadScale).Length() <= LoadRange))
+                                            continue;
+
+                                        var tpo = tp.Offset(x, y, z);
+                                        if (tempTiles.Contains(tpo))
+                                            continue;
+
+                                        Request(tpo, GenerationStage.Completed, "Player Nearby");
+                                    }
+                                }
+                            }
+                            //if (_pendingTiles.Count >= MaxTilesQueued)
+                            //    break;
+                        }
+
+                        _lastPlayerPosition = newPosition;
+
+                        ResortPending();
+                    }
+                }
             }
+        }
+
+        public Task<Tile> Request(Vector3I index, GenerationStage stage, string reason)
+        {
+            using (Profiler.CurrentProfiler.Begin("Requesting Tile Stage"))
+            {
+                //Debug.WriteLine($"Requested Tile {index} stage {stage} because: {reason}");
+                return Load(index).ContinueWith(task =>
+                {
+                    var tile = task.Result;
+                    var t = new TaskCompletionSource<Tile>();
+                    tile.ScheduleOnUpdate(()=> {
+                        tile.RequirePhase(stage);
+                        if (!tile.InvokeAfter(stage, () => t.TrySetResult(tile)))
+                        {
+                            QueueTile(tile);
+                        }
+                    });
+                    return t.Task;
+                }).Unwrap();
+            }
+        }
+
+        private Tile CreateAndInitializeTile(Vector3I index)
+        {
+            var tile = new Tile(this, index);
+
+            tile.Initialize();
+
+            SetTile(index, tile);
+
+            return tile;
+        }
+
+        public Task<Tile> Load(Vector3I index)
+        {
+            Tile tile;
+            if (Find(index, out tile))
+            {
+                return Task.FromResult(tile);
+            }
+
+            tile = CreateAndInitializeTile(index);
+
+            var t = new TaskCompletionSource<Tile>();
+            PriorityScheduler.Schedule(() =>
+            {
+                using (Profiler.CurrentProfiler.Begin("Loading Tile From Disk"))
+                {
+                    _storage.TryLoadTile(tile, loaded =>
+                    {
+                        t.TrySetResult(tile);
+                    });
+                }
+            }, PriorityClass.Average, -1);
+            return t.Task;
         }
 
         private static float Distance(EntityPosition newPosition, Tile tile)
@@ -209,29 +259,7 @@ namespace VoxelWorldEngine.Terrain
             return _tiles.TryGetValue(pos.X, pos.Y, pos.Z, out tile);
         }
 
-        public bool Require(Vector3I index, int phase, out Tile tile)
-        {
-            if (!Find(index, out tile))
-            {
-                var tt = tile = new Tile(this, index);
-                SetTile(index, tile);
-
-                PriorityScheduler.StartNew(() => {
-                    _storage.TryLoadTile(tt, (loaded) =>
-                    {
-                        ForceTile(tt);
-                        tt.RequirePhase(phase);
-                    });
-                }, -1);
-
-                return false;
-            }
-
-            ForceTile(tile);
-            return tile.RequirePhase(phase);
-        }
-
-        private Tile GetTileCoords(ref Vector3I xyz)
+        public Tile GetTileCoords(ref Vector3I xyz)
         {
             var oo = xyz & (Tile.GridSize - 1);
             var pp = xyz - oo;
@@ -248,34 +276,50 @@ namespace VoxelWorldEngine.Terrain
             return null;
         }
 
+        public Task<Tile> RequireTileCoords(Vector3I pos, GenerationStage stage, string reason)
+        {
+            return Request(BlockToTile(pos), stage, reason);
+        }
+
+        public static Vector3I BlockToTile(Vector3I pos)
+        {
+            var oo = pos & (Tile.GridSize - 1);
+            var pp = pos - oo;
+
+            return pp / Tile.GridSize;
+        }
+
         public int GetSolidTop(Vector3I xyz)
         {
-            // TODO: Support more than one tile in height!
-
-            var tile = GetTileCoords(ref xyz);
-            if (tile != null)
+            using (Profiler.CurrentProfiler.Begin("Finding Solid Top"))
             {
-                int top = tile.GetSolidTop(xyz.X, xyz.Z);
+                // TODO: Support more than one tile in height!
 
-                while(top < 0)
+                var tile = GetTileCoords(ref xyz);
+                if (tile != null)
                 {
-                    xyz.Y--;
-                    if (!Find(xyz, out tile))
-                        return top;
+                    int top = tile.GetSolidTop(xyz.X, xyz.Z);
 
-                    top = tile.GetSolidTop(xyz.X, xyz.Z);
+                    while (top < 0)
+                    {
+                        xyz.Y--;
+                        if (!Find(xyz, out tile))
+                            return top;
+
+                        top = tile.GetSolidTop(xyz.X, xyz.Z);
+                    }
+
+                    while (top == (Tile.GridSize.Y - 1))
+                    {
+                        xyz.Y++;
+                        if (!Find(xyz, out tile))
+                            return top;
+
+                        top = tile.GetSolidTop(xyz.X, xyz.Z);
+                    }
                 }
-
-                while(top == (Tile.GridSize.Y-1))
-                {
-                    xyz.Y++;
-                    if (!Find(xyz, out tile))
-                        return top;
-
-                    top = tile.GetSolidTop(xyz.X, xyz.Z);
-                }
+                return -1;
             }
-            return -1;
         }
 
         public Block GetBlock(Vector3I xyz, bool load = true)
@@ -308,74 +352,74 @@ namespace VoxelWorldEngine.Terrain
 
         internal void FindSpawnPosition()
         {
-            Vector3I xyz;
-            int range = 100;
-            int seekLimit = 256;
-
-            do
+            using (Profiler.CurrentProfiler.Begin("Finding Spawn Position"))
             {
-                var a = Random.NextDouble() * Math.PI * 2;
-                xyz = new Vector3I(
-                    (int)(range * Math.Cos(a)),
-                    GenerationContext.WaterLevel,
-                    (int)(range * Math.Sin(a)));
+                Vector3I xyz;
+                int range = 100;
+                int seekLimit = 256;
 
-                GenerationContext.GetTopologyAt(xyz.XZ, out var roughness, out var bottom, out var top);
-
-                if (GenerationContext.GetDensityAt(xyz, roughness, bottom, top) < 0)
+                do
                 {
+                    var a = Random.NextDouble() * Math.PI * 2;
+                    xyz = new Vector3I(
+                        (int)(range * Math.Cos(a)),
+                        GenerationContext.WaterLevel,
+                        (int)(range * Math.Sin(a)));
+
+                    var oo = xyz & (Tile.GridSize - 1);
+                    var pp = xyz - oo;
+
+                    var densityProvider = GenerationContext.DensityProvider;
+
+                    if (densityProvider.Get(xyz.Postincrement(0, 1, 0)) < 0)
+                    {
+                        range += 5;
+                        // try again
+                        continue;
+                    }
+
+                    while (seekLimit-- > 0)
+                    {
+                        if (densityProvider.Get(xyz.Postincrement(0, 1, 0)) >= 0)
+                        {
+                            continue;
+                        }
+                        if (densityProvider.Get(xyz.Postincrement(0, 1, 0)) >= 0)
+                        {
+                            continue;
+                        }
+                        if (densityProvider.Get(xyz.Postincrement(0, 1, 0)) >= 0)
+                        {
+                            continue;
+                        }
+                        if (densityProvider.Get(xyz.Postincrement(0, 1, 0)) < 0)
+                            break;
+                    }
+
+                    if (seekLimit <= 0)
+                        break;
+
                     range += 5;
                     // try again
-                    continue;
-                }
 
-                while (seekLimit-- > 0)
-                {
-                    if (GenerationContext.GetDensityAt(xyz.Postincrement(0, 1, 0), roughness, bottom, top) >= 0)
-                    {
-                        continue;
-                    }
-                    if (GenerationContext.GetDensityAt(xyz.Postincrement(0, 1, 0), roughness, bottom, top) >= 0)
-                    {
-                        continue;
-                    }
-                    if (GenerationContext.GetDensityAt(xyz.Postincrement(0, 1, 0), roughness, bottom, top) >= 0)
-                    {
-                        continue;
-                    }
-                    if (GenerationContext.GetDensityAt(xyz.Postincrement(0, 1, 0), roughness, bottom, top) < 0)
-                        break;
-                }
+                } while (true);
 
                 if (seekLimit <= 0)
-                    break;
+                {
+                    // TODO: Build spawn platform
+                }
 
-                range += 5;
-                // try again
-
-            } while (true);
-
-            if (seekLimit <= 0)
-            {
-                // TODO: Build spawn platform
+                SpawnPosition = EntityPosition.FromGrid(xyz.Offset(0, -3, 0));
             }
-
-            SpawnPosition = EntityPosition.FromGrid(xyz.Offset(0,-3,0));
         }
 
-        private void ForceTile(Tile tile)
-        {
-            if (!tile.Initialized)
-                tile.Initialize();
-        }
-
-        public bool ChunkExists(EntityPosition playerPosition)
+        public bool TileExists(EntityPosition playerPosition)
         {
             Tile tile;
             return Find(playerPosition.BasePosition, out tile) && tile.GenerationPhase >= 0;
         }
 
-        public void QueueTile(Tile tile)
+        private void QueueTile(Tile tile)
         {
             lock (_pendingTilesList)
             {
@@ -404,25 +448,51 @@ namespace VoxelWorldEngine.Terrain
                 StartGeneratingSpawnChunks();
             }
 
-            lock (_pendingTilesList)
+            using (Profiler.CurrentProfiler.Begin("Queuing Pending Tiles"))
             {
-                if (saveInitializationPhase == 0)
+                lock (_pendingTilesList)
                 {
-                    if (_pendingTilesList.Count == 0 && _tilesInProgress <= 0)
+                    if (saveInitializationPhase == 0)
                     {
-                        saveInitializationPhase = 1;
+                        if (_pendingTilesList.Count == 0 && PriorityScheduler.Instance.QueuedTaskCount == 0)
+                        {
+                            saveInitializationPhase = 1;
+                        }
                     }
-                }
 
-                if (_tilesInProgress < 10 && _pendingTilesList.Count > 0)
-                {
-                    for (int i = 0; i < 10 && _pendingTilesList.Count > 0; i++)
+                    while (PriorityScheduler.Instance.QueuedTaskCount < TaskThrottleThreshold && _pendingTilesList.Count > 0)
                     {
-                        var tile = _pendingTilesList[_pendingTilesList.Count - 1];
-                        _pendingTilesList.RemoveAt(_pendingTilesList.Count - 1);
-                        _pendingTilesSet.Remove(tile);
-                        tile.RequirePhase(1);
-                        ForceTile(tile);
+                        Tile closestTile = null;
+                        double closestDistance = -1;
+                        int closestIndex = -1;
+
+                        for (int i = 0; i < _pendingTilesList.Count; )
+                        {
+                            var tile = _pendingTilesList[i];
+                            var distance = tile.Centroid.RelativeTo(_lastPlayerPosition).Length();
+                            if (closestTile == null || distance < closestDistance)
+                            {
+                                closestTile = tile;
+                                closestDistance = distance;
+                                closestIndex = i;
+                            }
+                            if (distance > UnloadRadius)
+                            {
+                                _pendingTilesList.RemoveAt(i);
+                                _pendingTilesSet.Remove(tile);
+                            }
+                            else
+                            {
+                                i++;
+                            }
+                        }
+
+                        if (closestTile != null && _pendingTilesList.Count > 0)
+                        {
+                            _pendingTilesList.RemoveAt(closestIndex);
+                            _pendingTilesSet.Remove(closestTile);
+                            closestTile.RequirePhase(closestTile.RequiredPhase);
+                        }
                     }
                 }
             }
@@ -445,17 +515,20 @@ namespace VoxelWorldEngine.Terrain
 
             if (pendingSave.Count > 0 && !_storage.BusyWriting)
             {
-                PriorityScheduler.StartNew(() => {
-                    lock (pendingSave)
+                PriorityScheduler.Schedule(() => {
+                    using (Profiler.CurrentProfiler.Begin("Saving Tiles"))
                     {
-                        List<Tile> tiles = new List<Tile>();
-                        while (pendingSave.TryDequeue(out var d))
+                        lock (pendingSave)
                         {
-                            tiles.Add(d);
+                            List<Tile> tiles = new List<Tile>();
+                            while (pendingSave.TryDequeue(out var d))
+                            {
+                                tiles.Add(d);
+                            }
+                            _storage.WriteTiles(tiles);
                         }
-                        _storage.WriteTiles(tiles);
                     }
-                }, 1);
+                }, PriorityClass.Low, 1);
             }
 
             base.Update(gameTime);
@@ -479,9 +552,7 @@ namespace VoxelWorldEngine.Terrain
                             {
                                 var tpo = SpawnPosition.BasePosition.Offset(x, y, z);
 
-                                var tile = new Tile(this, tpo);
-                                SetTile(tpo, tile);
-                                QueueTile(tile);
+                                Request(tpo, GenerationStage.Completed, "Spawn Chunk");
                             }
                         }
                     }
@@ -532,34 +603,6 @@ namespace VoxelWorldEngine.Terrain
         public void TilePhaseChanged(Tile tile)
         {
             pendingSave.Enqueue(tile);
-        }
-
-        class GridTaskInProgress : TaskInProgress
-        {
-            private readonly Grid _grid;
-            public GridTaskInProgress(string taskName, object owner, Grid grid)
-                : base(taskName, owner)
-            {
-                _grid = grid;
-            }
-
-            public override bool End()
-            {
-                if (!base.End()) return false;
-                _grid.EndProcess();
-                return true;
-            }
-        }
-
-        public TaskInProgress BeginProcess(string name, object owner)
-        {
-            Interlocked.Increment(ref _tilesInProgress);
-            return new GridTaskInProgress(name, owner, this);
-        }
-
-        private void EndProcess()
-        {
-            Interlocked.Decrement(ref _tilesInProgress);
         }
     }
 }

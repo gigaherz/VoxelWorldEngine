@@ -61,17 +61,35 @@
     <Compile Include="Rendering\SSAO.cs" />
     <Compile Include="Rendering\MeshBuilderManager.cs" />
     <Compile Include="Storage\CrappyChunkStorage.cs" />
+    <Compile Include="Terrain\GenerationStage.cs" />
     <Compile Include="Terrain\Graphics\GridGraphics.cs" />
     <Compile Include="Terrain\Graphics\TileMesh.cs" />
     <Compile Include="Terrain\GenerationContext.cs" />
-    <Compile Include="Util\TaskInProgress.cs" />
+    <Compile Include="Util\IInterpolator.cs" />
+    <Compile Include="Util\Performance\BasicProfiler.cs" />
+    <Compile Include="Util\Performance\DummyProfiler.cs" />
+    <Compile Include="Util\Performance\IProfiler.cs" />
+    <Compile Include="Util\Performance\IProfilerFrame.cs" />
+    <Compile Include="Util\Performance\Profiler.cs" />
+    <Compile Include="Util\Scheduler\PositionedTask.cs" />
+    <Compile Include="Util\Scheduler\PriorityClass.cs" />
+    <Compile Include="Util\Scheduler\PriorityTaskBase.cs" />
+    <Compile Include="Util\Providers\CachingValueProvider.cs" />
+    <Compile Include="Util\ProviderMap.cs" />
+    <Compile Include="Util\Providers\DensityProvider.cs" />
+    <Compile Include="Util\Providers\NoiseValueProvider.cs" />
+    <Compile Include="Util\Providers\SubsamplingValueProvider.cs" />
+    <Compile Include="Util\ProviderType.cs" />
+    <Compile Include="Util\Providers\TopologyProvider.cs" />
+    <Compile Include="Util\Providers\ValueProvider.cs" />
+    <Compile Include="Util\MathX.cs" />
     <Compile Include="Util\OcTree.cs" />
     <Compile Include="Util\SingleAccessVerify.cs" />
     <Compile Include="Terrain\Graphics\TileGraphics.cs" />
     <Compile Include="Util\MouseExtras.cs" />
     <Compile Include="Registry\ObjectKey.cs" />
     <Compile Include="Noise\Perlin.cs" />
-    <Compile Include="Util\PriorityScheduler.cs" />
+    <Compile Include="Util\Scheduler\PriorityScheduler.cs" />
     <Compile Include="Program.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="Registry\RegistrableObject.cs" />
@@ -97,6 +115,9 @@
     <Reference Include="System" />
     <Reference Include="System.Management" />
     <Reference Include="System.Runtime.Serialization" />
+    <Reference Include="System.ValueTuple, Version=4.0.3.0, Culture=neutral, PublicKeyToken=cc7b13ffcd2ddd51, processorArchitecture=MSIL">
+      <HintPath>..\packages\System.ValueTuple.4.5.0\lib\netstandard1.0\System.ValueTuple.dll</HintPath>
+    </Reference>
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
@@ -115,6 +136,7 @@
     <None Include="Content\SSAO.fx" />
     <None Include="Content\SSAOBlur.fx" />
     <Content Include="Icon.ico" />
+    <None Include="packages.config" />
   </ItemGroup>
   <ItemGroup>
     <MonoGameContentReference Include="Content\Content.mgcb">

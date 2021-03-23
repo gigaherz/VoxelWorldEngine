@@ -19,12 +19,12 @@ namespace VoxelWorldEngine.Maths
 
         public Vector3 RelativeTo(EntityPosition other)
         {
-            return RelativePosition - other.RelativePosition + (BasePosition - other.BasePosition) * Tile.RealSize;
+            return GetBaseDifference(other) + RelativePosition - other.RelativePosition;
         }
 
-        public Vector3 RebaseTo(EntityPosition other)
+        private Vector3I GetBaseDifference(EntityPosition other)
         {
-            return RelativePosition + (BasePosition - other.BasePosition) * Tile.RealSize;
+            return (BasePosition - other.BasePosition) * Tile.RealSize;
         }
 
         public static EntityPosition Create(Vector3I basePosition, EntityPosition other)

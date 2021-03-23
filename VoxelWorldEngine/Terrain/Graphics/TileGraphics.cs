@@ -9,6 +9,8 @@ using VoxelWorldEngine.Maths;
 using VoxelWorldEngine.Objects;
 using VoxelWorldEngine.Rendering;
 using VoxelWorldEngine.Util;
+using VoxelWorldEngine.Util.Performance;
+using VoxelWorldEngine.Util.Scheduler;
 
 namespace VoxelWorldEngine.Terrain.Graphics
 {
@@ -54,40 +56,45 @@ namespace VoxelWorldEngine.Terrain.Graphics
             if (Interlocked.Exchange(ref Busy, 1) != 0)
                 return false;
 
-            Tile.RunProcess(GenMeshes, 0, "Generating Meshes").ContinueWith(_ => Tile.InvokeAfter(-1, AfterGenMeshes));
+            Tile.RunProcess(GenMeshes, GenerationStage.Terrain, PriorityClass.High, "Generating Meshes").ContinueWith(_ => Tile.InvokeAfter(GenerationStage.Terrain, AfterGenMeshes));
 
             return true;
         }
 
         private void AfterGenMeshes()
         {
-            Debug.Assert(Thread.CurrentThread == VoxelGame.GameThread);
-
-            List<MeshBuilder> builders;
-            while (_builders.TryDequeue(out builders))
+            using (Profiler.CurrentProfiler.Begin("After Generate Meshes"))
             {
-                foreach (var m in Meshes)
-                    m.Dispose();
+                Debug.Assert(Thread.CurrentThread == VoxelGame.GameThread);
 
-                Meshes.Clear();
-
-                foreach (var builder in builders)
+                List<MeshBuilder> builders;
+                while (_builders.TryDequeue(out builders))
                 {
-                    var mesh = builder.Build(Game);
-                    if (mesh != null)
-                        Meshes.Add(mesh);
-                    builder.Clear();
-                }
-            }
-            Interlocked.Exchange(ref Busy, 0);
+                    foreach (var m in Meshes)
+                        m.Dispose();
 
-            _collectorManager.Clear();
+                    Meshes.Clear();
+
+                    foreach (var builder in builders)
+                    {
+                        var mesh = builder.Build(Game);
+                        if (mesh != null)
+                            Meshes.Add(mesh);
+                        builder.Clear();
+                    }
+                }
+                Interlocked.Exchange(ref Busy, 0);
+
+                _collectorManager.Clear();
+            }
         }
 
         public void GenMeshes()
         {
-            using (var unused = new TaskInProgress("GenMeshes", this))
+            using (Profiler.CurrentProfiler.Begin("Generating Meshes"))
+            {
                 GenMeshesPlain();
+            }
         }
 
         public void GenMeshesPlain()

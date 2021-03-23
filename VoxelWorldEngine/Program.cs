@@ -2,6 +2,7 @@ using System;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Threading;
+using VoxelWorldEngine.Util.Performance;
 #if OPENGL && DEBUG
 using OpenTK.Graphics.OpenGL;
 #endif
@@ -24,7 +25,12 @@ namespace VoxelWorldEngine
             using (VoxelGame game = new VoxelGame())
             {
                 EnableDebugOutput();
-                game.Run();
+
+                using (Profiler.CurrentProfiler.BeginThread())
+                {
+                    game.Run();
+                }
+                Profiler.CurrentProfiler.Close();
             }
         }
 

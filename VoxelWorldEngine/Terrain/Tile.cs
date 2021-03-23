@@ -1,11 +1,11 @@
-#define INSTRUMENT
-
 using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Runtime.Serialization;
 using System.Threading;
+using System.Threading.Tasks;
 using Microsoft.Xna.Framework;
 using VoxelWorldEngine.Maths;
 using VoxelWorldEngine.Noise;
@@ -13,6 +13,9 @@ using VoxelWorldEngine.Objects;
 using VoxelWorldEngine.Storage;
 using VoxelWorldEngine.Terrain.Graphics;
 using VoxelWorldEngine.Util;
+using VoxelWorldEngine.Util.Performance;
+using VoxelWorldEngine.Util.Providers;
+using VoxelWorldEngine.Util.Scheduler;
 
 namespace VoxelWorldEngine.Terrain
 {
@@ -21,8 +24,8 @@ namespace VoxelWorldEngine.Terrain
         // Tile properties
         private static readonly int RealSizeH = 32;
         private static readonly int RealSizeV = 32;
-        private static readonly int GridSizeH = 32;
-        private static readonly int GridSizeV = 32;
+        private static readonly int GridSizeH = 64;
+        private static readonly int GridSizeV = 64;
         private static readonly float VoxelSizeH = RealSizeH / (float)GridSizeH;
         private static readonly float VoxelSizeV = RealSizeV / (float)GridSizeV;
         public static readonly Vector3I GridSize = new Vector3I(GridSizeH, GridSizeV, GridSizeH);
@@ -33,8 +36,8 @@ namespace VoxelWorldEngine.Terrain
         private int[] _heightmap;
         private readonly CubeTree<ISerializable> _gridExtra = new CubeTree<ISerializable>();
 
-        private int dependencies1 = 0;
-        private int _generationPhase = -1;
+        private volatile GenerationStage _generationPhase = GenerationStage.Unstarted;
+        private GenerationStage _previousGenerationPhase = GenerationStage.Unstarted;
         private bool _isSparse = true;
 
         private bool _isSolid = false;
@@ -44,12 +47,14 @@ namespace VoxelWorldEngine.Terrain
 
         public bool IsSparse => _isSparse;
         public bool IsSolid => _isSolid;
-        public int GenerationPhase => _generationPhase;
-        public int RequiredPhase { get; private set; } = 0;
+        public GenerationStage GenerationPhase => _generationPhase;
+        public GenerationStage RequiredPhase { get; private set; } = GenerationStage.Density;
 
         public bool Initialized { get; private set; }
         public bool IsDirty { get; private set; }
         public bool IsSaved { get; }
+
+        public bool IsLoaded { get; private set; }
 
         public Grid Parent { get; }
         public GenerationContext Context { get; }
@@ -61,11 +66,18 @@ namespace VoxelWorldEngine.Terrain
 
         public EntityPosition Centroid { get; }
 
-        private int _previousGenerationPhase = -1;
-        private void OnGenerationPhaseChange()
-        {
-            Parent.TilePhaseChanged(this);
-        }
+        private readonly ProviderMap valueProviders = new ProviderMap();
+
+        public ValueProvider3D<double> GetRawDensityProvider() =>
+            valueProviders.GetOrAdd(ProviderType.RAW_DENSITY, k =>
+                new CachingValueProvider3D<double>(Offset, GridSize, Context.RawDensityProvider));
+        public ValueProvider2D<(double, double, double)> GetTopologyProvider() =>
+            valueProviders.GetOrAdd(ProviderType.TOPOLOGY, k =>
+                new CachingValueProvider2D<(double, double, double)>(Offset.XZ, GridSize.XZ, Context.TopologyProvider));
+        public ValueProvider3D<double> GetDensityProvider() =>
+            valueProviders.GetOrAdd(ProviderType.DENSITY, k => new DensityProvider(GetRawDensityProvider(), GetTopologyProvider()));
+
+        private readonly ConcurrentQueue<Action>[] _pendingActions;
 
         public Tile(Grid parent, Vector3I index)
             : base(parent.Game)
@@ -78,20 +90,54 @@ namespace VoxelWorldEngine.Terrain
             Centroid = EntityPosition.Create(Index, RealSize * 0.5f);
 
             Graphics = new TileGraphics(this);
+
+            List<ConcurrentQueue<Action>> acts = new List<ConcurrentQueue<Action>>();
+            for(int i=0;i<=((int)GenerationStage.Completed+1);i++)
+            {
+                acts.Add(new ConcurrentQueue<Action>());
+            }
+
+            _pendingActions = acts.ToArray();
         }
 
-        private readonly ConcurrentQueue<Action>[] _pendingActions = {
-            new ConcurrentQueue<Action>(),
-            new ConcurrentQueue<Action>(),
-            new ConcurrentQueue<Action>()
-        };
+        private void OnGenerationPhaseChange()
+        {
+            Parent.TilePhaseChanged(this);
+        }
 
-        public void InvokeAfter(int phase, Action action)
+        public bool Load()
+        {
+            IsLoaded = true;
+        }
+
+        public bool Unload()
+        {
+            IsLoaded = false;
+        }
+
+        /// <summary>
+        /// 
+        /// </summary>
+        /// <param name="phase"></param>
+        /// <param name="action"></param>
+        /// <returns>True if the action was executed immediately</returns>
+        public bool InvokeAfter(GenerationStage phase, Action action)
         {
             if (_generationPhase >= phase && Thread.CurrentThread == VoxelGame.GameThread)
+            {
                 action();
+                return true;
+            }
             else
-                _pendingActions[phase + 1].Enqueue(action);
+            {
+                _pendingActions[(int)phase + 1].Enqueue(action);
+                return false;
+            }
+        }
+
+        public void ScheduleOnUpdate(Action action)
+        {
+            InvokeAfter(GenerationPhase, action);
         }
 
         protected override void Dispose(bool disposing)
@@ -110,26 +156,30 @@ namespace VoxelWorldEngine.Terrain
             RequirePhase(RequiredPhase);
         }
 
-        private void MarkNeighboursDirty(PriorityScheduler.PositionedTask task)
+        private void MarkNeighboursDirty()
         {
-            if (!_isSparse)
-                IsDirty = true;
+            using (Profiler.CurrentProfiler.Begin("Mark Neighbours Dirty"))
+            {
+                InvokeAfter(GenerationPhase, () =>
+                {
+                    if (!_isSparse)
+                        IsDirty = true;
 
-            Tile tile;
-            if (Parent.Find(Index.Offset(-1, 0, 0), out tile)) tile.MarkDirty();
-            if (Parent.Find(Index.Offset(+1, 0, 0), out tile)) tile.MarkDirty();
-            if (Parent.Find(Index.Offset(0, -1, 0), out tile)) tile.MarkDirty();
-            if (Parent.Find(Index.Offset(0, +1, 0), out tile)) tile.MarkDirty();
-            if (Parent.Find(Index.Offset(0, 0, -1), out tile)) tile.MarkDirty();
-            if (Parent.Find(Index.Offset(0, 0, +1), out tile)) tile.MarkDirty();
+                    Tile tile;
+                    if (Parent.Find(Index.Offset(-1, 0, 0), out tile)) tile.MarkDirty();
+                    if (Parent.Find(Index.Offset(+1, 0, 0), out tile)) tile.MarkDirty();
+                    if (Parent.Find(Index.Offset(0, -1, 0), out tile)) tile.MarkDirty();
+                    if (Parent.Find(Index.Offset(0, +1, 0), out tile)) tile.MarkDirty();
+                    if (Parent.Find(Index.Offset(0, 0, -1), out tile)) tile.MarkDirty();
+                    if (Parent.Find(Index.Offset(0, 0, +1), out tile)) tile.MarkDirty();
+                });
+            }
         }
 
-        public PriorityScheduler.PositionedTask RunProcess(Action process, int phase, string processName)
+        public Task RunProcess(Action process, GenerationStage phase, PriorityClass priorityClass, string processName)
         {
-            var processContext = Parent.BeginProcess(processName, this);
-            var p = PriorityScheduler.StartNew(process, Centroid);
-            p.OnCompleted += t => { processContext.End(); };
-            return p;
+            //Debug.WriteLine($"Starting Process {processName} for tile {Index} during phase {phase}");
+            return PriorityScheduler.Schedule(process, priorityClass, Centroid).Task;
         }
 
         private void MarkDirty()
@@ -138,258 +188,174 @@ namespace VoxelWorldEngine.Terrain
                 IsDirty = true;
         }
 
-        public bool RequirePhase(int i)
+        public bool RequirePhase(GenerationStage required)
         {
-            if (GenerationPhase >= i)
-                return true;
-
-            RequiredPhase = Math.Max(RequiredPhase, i);
-
-            if (!Initialized)
-                return false;
-
-            switch (GenerationPhase)
+            using (Profiler.CurrentProfiler.Begin("Require Phase"))
             {
-            case -1: PreparePhase0(); break;
-            case 0: PreparePhase1(); break;
-            }
+                if (GenerationPhase >= required)
+                    return true;
 
-            return false;
+                RequiredPhase = (GenerationStage)Math.Max((int)RequiredPhase, (int)required);
+
+                if (!Initialized)
+                    return false;
+
+                switch (GenerationPhase)
+                {
+                    case GenerationStage.Unstarted: PrepareGenerationDensity(); break;
+                    case GenerationStage.Density: PrepareGenerationTerrain(); break;
+                    case GenerationStage.Terrain: PrepareGenerationSurface(); break;
+                    default:
+                        _generationPhase = GenerationStage.Completed; break;
+                }
+
+                return false;
+            }
         }
 
-        void PreparePhase0()
+        void PrepareGenerationDensity()
         {
-            if (_generationPhase >= 0)
+            if (_generationPhase >= GenerationStage.Density)
                 return;
 
-            RunProcess(GenTerrain, 0, "Generating Terrain").ContinueWith(MarkNeighboursDirty);
+            RunProcess(GenDensity, GenerationStage.Density, PriorityClass.Average, "Generating Density Grid");
         }
 
-
-#if INSTRUMENT
-        private static int _callsGen0;
-        private static double _timeGen0;
-#endif
-
-        private static double lerp(double x, double y, double t) { return x + t * (y - x); }
-
-        const int rawDensityResolution = 5;
-        const double rawDensityScale = rawDensityResolution - 1.0;
-        private double[] rawDensity;
-        public double GetSubsampledRawDensity(int x, int y, int z)
+        void PrepareGenerationTerrain()
         {
-            double GZ1 = GridSizeH + 1;
-            double GY1 = GridSizeV + 1;
+            if (_generationPhase >= GenerationStage.Terrain)
+                return;
 
-            if (rawDensity == null)
-            {
-                // Compute raw densities
-                rawDensity = new double[rawDensityResolution * rawDensityResolution * rawDensityResolution];
-
-                for (int zi = 0; zi < rawDensityResolution; zi++)
-                {
-                    for (int xi = 0; xi < rawDensityResolution; xi++)
-                    {
-                        for (int yi = 0; yi < rawDensityResolution; yi++)
-                        {
-                            var off = new Vector3D(xi * (GZ1 / rawDensityScale), yi * (GY1 / rawDensityScale), zi * (GZ1 / rawDensityScale));
-                            var pxyz = Offset + off;
-
-                            int i = (zi * rawDensityResolution + xi) * rawDensityResolution + yi;
-
-                            rawDensity[i] = Context.GetRawDensityAt(pxyz);
-                        }
-                    }
-                }
-            }
-
-            // density interpolation
-            return lerp3D(z, x, y, rawDensity, rawDensityResolution, rawDensityResolution, rawDensityScale, GZ1, GY1);
+            RunProcess(GenTerrain, GenerationStage.Terrain, PriorityClass.Average, "Calculating Terrain");
         }
 
-        void GenTerrain()
+        private void PrepareGenerationSurface()
         {
-#if INSTRUMENT
-            var stopwatchGen0 = new Stopwatch();
-#endif
-
-            using (var unused = new TaskInProgress("GenMeshes", this))
-            {
-                InitializeStorage();
-
-                //lock (_gridBlock)
-                {
-#if INSTRUMENT
-                    stopwatchGen0.Start();
-#endif
-
-                    int relativeWaterLevel = Math.Min(GridSizeV, Context.WaterLevel - Offset.Y);
-
-                    for (int z = 0; z < GridSizeH; z++)
-                    {
-                        for (int x = 0; x < GridSizeH; x++)
-                        {
-                            var pxz = Offset.Offset(x, 0, z).XZ;
-                            //var roughness = lerp2D(z, x, rawRoughness, rawRoughnessResolution, rawRoughnessScale, GZ1);
-                            Context.GetTopologyAt(pxz, out var roughness, out var bottom, out var top);
-
-                            var topSolid = -1;
-                            for (int y = 0; y < GridSizeV; y++)
-                            {
-                                var pxyz = Offset.Offset(x, y, z);
-
-                                var block = Block.Unbreakite;
-
-                                // TODO: Add back optional ceiling/floor generation
-                                if (true) //Offset.Y + y > Context.Floor)
-                                {
-                                    // density interpolation
-                                    var dd = GetSubsampledRawDensity(z, x, y);
-                                    var density = Context.GetDensityAt(pxyz, roughness, bottom, top, dd);
-
-                                    if (density < 0.0)
-                                    {
-                                        block = Block.Air;
-                                    }
-                                    else if (density < 0.50)
-                                    {
-                                        block = Block.Stone;
-                                    }
-                                    else
-                                    {
-                                        block = Block.Granite;
-                                    }
-                                }
-
-                                if (block.PhysicsMaterial.IsSolid)
-                                {
-                                    topSolid = Math.Max(topSolid, y);
-                                }
-                                else if (block == Block.Air && y < relativeWaterLevel)
-                                {
-                                    block = Block.SeaWater;
-                                }
-
-                                SetBlockNoLock(x, y, z, block);
-                            }
-
-                            _heightmap[z * GridSizeH + x] = topSolid;
-                        }
-                    }
-
-                    Interlocked.Exchange(ref _generationPhase, 0);
-
-#if INSTRUMENT
-                    stopwatchGen0.Stop();
-                    _callsGen0++;
-                    _timeGen0 += stopwatchGen0.ElapsedTicks * 1000.0 / (double)Stopwatch.Frequency;
-#endif
-                }
-
-                PreparePhase1();
-            }
-        }
-
-        private static double lerp3D(int z, int x, int y, double[] rawDensity, int dim0, int dim1, double rdgd, double gz1, double gy1)
-        {
-            var xp = x * (rdgd / gz1);
-            var zp = z * (rdgd / gz1);
-            var yp = y * (rdgd / gy1);
-            var xi = NoiseOctaves.fastfloor(xp);
-            var zi = NoiseOctaves.fastfloor(zp);
-            var yi = NoiseOctaves.fastfloor(yp);
-            var xt = xp - xi;
-            var yt = yp - yi;
-            var zt = zp - zi;
-
-            var dy000 = rawDensity[(zi * dim1 + xi) * dim0 + yi];
-            var dy001 = rawDensity[(zi * dim1 + xi) * dim0 + yi + 1];
-            var dy010 = rawDensity[(zi * dim1 + xi + 1) * dim0 + yi];
-            var dy011 = rawDensity[(zi * dim1 + xi + 1) * dim0 + yi + 1];
-            var dy100 = rawDensity[((zi+1) * dim1 + xi) * dim0 + yi];
-            var dy101 = rawDensity[((zi+1) * dim1 + xi) * dim0 + yi + 1];
-            var dy110 = rawDensity[((zi+1) * dim1 + xi + 1) * dim0 + yi];
-            var dy111 = rawDensity[((zi+1) * dim1 + xi + 1) * dim0 + yi + 1];
-
-            var dx00 = lerp(dy000, dy001, yt);
-            var dx01 = lerp(dy010, dy011, yt);
-            var dx10 = lerp(dy100, dy101, yt);
-            var dx11 = lerp(dy110, dy111, yt);
-
-            var dz0 = lerp(dx00, dx01, xt);
-            var dz1 = lerp(dx10, dx11, xt);
-
-            var dd = lerp(dz0, dz1, zt);
-            return dd;
-        }
-
-        private void PreparePhase1()
-        {
-            if (_generationPhase >= 1)
+            if (_generationPhase >= GenerationStage.Surface)
                 return;
 
             if (_isSparse)
             {
                 // We don't need to generate surfaces so don't queue the task at all
-                Interlocked.Exchange(ref _generationPhase, 1);
+                _generationPhase = GenerationStage.Surface;
+                return;
             }
-            else if (RequiredPhase >= 1)
+
+            Task.WhenAll(
+                Parent.Request(Index.Offset(0, 1, 0), GenerationStage.Terrain, "surface generation up"),
+                Parent.Request(Index.Offset(0, -1, 0), GenerationStage.Terrain, "surface generation down")
+            ).ContinueWith(_ => RunProcess(PostProcessSurface, GenerationStage.Surface, PriorityClass.Average, "Processing Surface"));
+        }
+
+        void GenDensity()
+        {
+            using (Profiler.CurrentProfiler.Begin("Generating Density"))
             {
-                InvokeAfter(-1, () =>
+                if (Offset.Y + GridSize.Y >= Context.WorldFloor)
                 {
-                    int deps = 0;
+                    var densityProvider = GetDensityProvider();
+                    densityProvider.Get(Offset);
+                }
+                _generationPhase = GenerationStage.Density;
 
-                    // Depend on the chunk above, in order to be able to get blocks above the chunk limit
-                    if (!Parent.Require(Index.Offset(0, 1, 0), 0, out var depUp))
-                    {
-                        Interlocked.Increment(ref dependencies1);
-                        depUp.InvokeAfter(0, Phase1DependencyCallback);
-                        deps++;
-                    }
-
-                    // Depend on the chunk below, in order to be able to set blocks when processing surfaces
-                    if (!Parent.Require(Index.Offset(0, -1, 0), 0, out var depDown))
-                    {
-                        Interlocked.Increment(ref dependencies1);
-                        depDown.InvokeAfter(0, Phase1DependencyCallback);
-                        deps++;
-                    }
-
-                    // If all the surrounding chunks are already generated, run immediately
-                    if (deps == 0)
-                    {
-                        RunPhase1();
-                    }
-                });
+                if (RequiredPhase > _generationPhase)
+                    PrepareGenerationTerrain();
             }
         }
 
-        private void Phase1DependencyCallback()
+        void GenTerrain()
         {
-            if (Interlocked.Decrement(ref dependencies1) == 0)
+            using (Profiler.CurrentProfiler.Begin("Generating Terrain"))
             {
-                RunPhase1();
+                if (Offset.Y + GridSize.Y >= Context.WorldFloor)
+                {
+                    var densityProvider = GetDensityProvider();
+
+                    //lock (_gridBlock)
+                    {
+                        int relativeWaterLevel = Math.Min(GridSizeV, Context.WaterLevel - Offset.Y);
+
+                        for (int z = 0; z < GridSizeH; z++)
+                        {
+                            for (int x = 0; x < GridSizeH; x++)
+                            {
+                                var pxz = Offset.Offset(x, 0, z);
+
+                                var topSolid = -1;
+                                for (int y = 0; y < GridSizeV; y++)
+                                {
+                                    var pxyz = Offset.Offset(x, y, z);
+
+                                    var block = Block.Unbreakite;
+
+                                    // TODO: Add back optional ceiling/floor generation
+                                    if (Offset.Y + y > Context.WorldFloor)
+                                    {
+                                        // density interpolation
+                                        var density = densityProvider.Get(pxyz);
+
+                                        if (density < 0.0)
+                                        {
+                                            block = Block.Air;
+                                        }
+                                        else if (density < 0.50)
+                                        {
+                                            block = Block.Stone;
+                                        }
+                                        else
+                                        {
+                                            block = Block.Granite;
+                                        }
+                                    }
+
+                                    if (block.PhysicsMaterial.IsSolid)
+                                    {
+                                        topSolid = Math.Max(topSolid, y);
+                                    }
+                                    else if (block == Block.Air && y < relativeWaterLevel)
+                                    {
+                                        block = Block.SeaWater;
+                                    }
+
+                                    SetBlockNoLock(x, y, z, block);
+                                }
+
+                                if (!_isSparse)
+                                {
+                                    _heightmap[z * GridSizeH + x] = topSolid;
+                                }
+                            }
+                        }
+
+                    }
+                }
+
+                _generationPhase = GenerationStage.Terrain;
+
+                if (RequiredPhase > _generationPhase)
+                    PrepareGenerationSurface();
+
+                InvokeAfter(_generationPhase, MarkNeighboursDirty);
             }
         }
 
-        private void RunPhase1()
-        {
-            RunProcess(PostProcessSurface, 1, "Processing Surface").ContinueWith(MarkNeighboursDirty);
-        }
 
         private readonly float rsqr2 = 1.0f / (float)Math.Sqrt(2);
         private void PostProcessSurface()
         {
-            using (var unused = new TaskInProgress("GenMeshes", this))
+            using (Profiler.CurrentProfiler.Begin("Processing Surface"))
             {
                 lock (_lock)
                 {
+                    var densityProvider = GetDensityProvider();
+                    var topologyProvider = GetTopologyProvider();
                     int relativeWaterLevel = Context.WaterLevel - Offset.Y;
+                    Vector2I xZ = Offset.XZ;
                     for (int z = 0; z < GridSizeH; z++)
                     {
                         for (int x = 0; x < GridSizeH; x++)
                         {
-                            Context.GetTopologyAt(Offset.XZ.Offset(x, z), out var roughness, out var dbottom, out var dtop);
+                            var (roughness, dbottom, dtop) = topologyProvider.Get(xZ.Offset(x, z));
 
                             for (int y = 0; y < GridSizeV; y++)
                             {
@@ -407,8 +373,8 @@ namespace VoxelWorldEngine.Terrain
                                     //if (avgSlope > 0.01)
                                     //    continue;
 
-                                    int yCeiling = GetProbableCeilingPosition(x, y + 1, z, 128); // search up to one chunk's height up, for now
-                                    bool hasCeiling = (yCeiling - y) < 128;
+                                    int yCeiling = 128; // GetProbableCeilingPosition(x, y + 1, z, GridSize.Y); // search up to one chunk's height up, for now
+                                    bool hasCeiling = (yCeiling - y) < GridSize.Y;
 
                                     if (GetSurfaceMaterials(above, y, relativeWaterLevel, hasCeiling, out var replaceWith))
                                     {
@@ -422,8 +388,10 @@ namespace VoxelWorldEngine.Terrain
                         }
                     }
 
-                    Interlocked.Exchange(ref _generationPhase, 1);
+                    _generationPhase = GenerationStage.Surface;
                 }
+
+                InvokeAfter(_generationPhase, MarkNeighboursDirty);
             }
         }
 
@@ -458,93 +426,95 @@ namespace VoxelWorldEngine.Terrain
             return false;
         }
 
-        public int GetProbableSurfacePosition(int x, int top, int z, int maxscan, double roughness, double dbottom, double dtop)
+        public int FindCeilingAbove(int x, int top, int z, int maxscan)
         {
-            var pos = Offset.Offset(x, top, z);
-            var startY = pos.Y;
-
-            double density;
-            do
+            using (Profiler.CurrentProfiler.Begin("Find Ceiling"))
             {
-                pos += new Vector3I(0, 1, 0);
-                density = Context.GetDensityAt(pos, roughness, dbottom, dtop);
-            }
-            while (density >= 0 && (pos.Y - startY) < maxscan);
+                var pos = Offset.Offset(x, top, z);
+                var startY = pos.Y;
 
-            return (pos.Y - startY) + top;
+                var densityProvider = Context.DensityProvider;
+
+                double density;
+                do
+                {
+                    pos += new Vector3I(0, 1, 0);
+                    density = densityProvider.Get(pos);
+                }
+                while (density < 0 && (pos.Y - startY) < maxscan);
+
+                if ((pos.Y - startY) >= maxscan)
+                    return int.MaxValue;
+
+                return (pos.Y - startY) + top;
+            }
         }
 
-        public int GetProbableCeilingPosition(int x, int top, int z, int maxscan)
+        private bool IsPosInside(Vector3I pos)
         {
-            var pos = Offset.Offset(x, top, z);
-            var startY = pos.Y;
+            var p = pos.Offset(-Offset.X, -Offset.Y, -Offset.Z);
+            return p.X >= 0 && p.Y >= 0 && p.Z >= 0 && p.X < GridSize.X && p.Y < GridSize.Y && p.Z < GridSize.Z;
+        }
 
-            Context.GetTopologyAt(pos.XZ, out var roughness, out var dbottom, out var dtop);
-
-            double density;
-            do
+        public int GetSurfacePosition(int x, int top, int z, int maxscan)
+        {
+            using (Profiler.CurrentProfiler.Begin("Find Surface"))
             {
-                pos += new Vector3I(0, 1, 0);
-                density = Context.GetDensityAt(pos, roughness, dbottom, dtop);
+                var pos = Offset.Offset(x, top, z);
+                var startY = pos.Y;
+
+                var densityProvider = GetDensityProvider();
+                double density;
+                do
+                {
+                    pos += new Vector3I(0, 1, 0);
+                    if (IsPosInside(pos))
+                    {
+                        density = densityProvider.Get(pos);
+                    }
+                    else
+                    {
+                        var task = Parent.RequireTileCoords(pos, GenerationStage.Terrain, "surface generation find ceiling");
+                        task.Wait();
+                        var tile = task.Result;
+                        if (tile != null)
+                        {
+                            density = tile.GetDensityProvider().Get(pos);
+                        }
+                        else
+                        {
+                            density = 0;
+                        }
+                    }
+                }
+                while (density >= 0 && (pos.Y - startY) < maxscan);
+
+                return (pos.Y - startY) + top;
             }
-            while (density < 0 && (pos.Y - startY) < maxscan);
-
-            if ((pos.Y - startY) >= maxscan)
-                return int.MaxValue;
-
-            return (pos.Y - startY) + top;
-        }
-
-        public double GetSlowDensityAt(int x, int y, int z)
-        {
-            var pos = Offset.Offset(x, y, z);
-            Context.GetTopologyAt(pos.XZ, out var roughness, out var dbottom, out var dtop);
-            return Context.GetDensityAt(pos, roughness, dbottom, dtop);
-        }
-
-        public double GetFasterDensityAt(int x, int y, int z)
-        {
-            var pos = Offset.Offset(x, y, z);
-            Context.GetTopologyAt(pos.XZ, out var roughness, out var dbottom, out var dtop);
-
-            var dd = GetSubsampledRawDensity(x, y, z);
-            return Context.GetDensityAt(pos, roughness, dbottom, dtop, dd);
-        }
-
-        private double GetGradientAt(int x, int y, int z)
-        {
-            double top  = GetFasterDensityAt(x, y, z);
-            double top0 = GetFasterDensityAt(x, y, z + 1);
-            double top1 = GetFasterDensityAt(x, y, z - 1);
-            double top2 = GetFasterDensityAt(x - 1, y, z);
-            double top3 = GetFasterDensityAt(x + 1, y, z);
-            double top4 = GetFasterDensityAt(x - 1, y, z + 1);
-            double top5 = GetFasterDensityAt(x + 1, y, z - 1);
-            double top6 = GetFasterDensityAt(x + 1, y, z + 1);
-            double top7 = GetFasterDensityAt(x - 1, y, z - 1);
-
-            return (Math.Abs(top0 - top) + Math.Abs(top1 - top) +
-                    Math.Abs(top2 - top) + Math.Abs(top3 - top) +
-                    (Math.Abs(top4 - top) + Math.Abs(top5 - top) +
-                     Math.Abs(top6 - top) + Math.Abs(top7 - top)) * rsqr2) * (1.0 / (4 + 4 * rsqr2));
         }
 
         private float GetSlopeAt(int x, int y, int z, int searchLimit, double roughness, double dbottom, double dtop)
         {
-            var sl2 = searchLimit * 2;
-            int top0 = GetProbableSurfacePosition(x, y - searchLimit, z + 1, sl2, roughness, dbottom, dtop);
-            int top1 = GetProbableSurfacePosition(x, y - searchLimit, z - 1, sl2, roughness, dbottom, dtop);
-            int top2 = GetProbableSurfacePosition(x - 1, y - searchLimit, z, sl2, roughness, dbottom, dtop);
-            int top3 = GetProbableSurfacePosition(x + 1, y - searchLimit, z, sl2, roughness, dbottom, dtop);
-            int top4 = GetProbableSurfacePosition(x - 1, y - searchLimit, z + 1, sl2, roughness, dbottom, dtop);
-            int top5 = GetProbableSurfacePosition(x + 1, y - searchLimit, z - 1, sl2, roughness, dbottom, dtop);
-            int top6 = GetProbableSurfacePosition(x + 1, y - searchLimit, z + 1, sl2, roughness, dbottom, dtop);
-            int top7 = GetProbableSurfacePosition(x - 1, y - searchLimit, z - 1, sl2, roughness, dbottom, dtop);
+            using (Profiler.CurrentProfiler.Begin("Calculate Slope"))
+            {
+                double top0 = Context.HeightProvider.Get(x, z + 1);
+                double top1 = Context.HeightProvider.Get(x, z - 1);
+                double top2 = Context.HeightProvider.Get(x - 1, z);
+                double top3 = Context.HeightProvider.Get(x + 1, z);
+                double top4 = Context.HeightProvider.Get(x - 1, z + 1);
+                double top5 = Context.HeightProvider.Get(x + 1, z - 1);
+                double top6 = Context.HeightProvider.Get(x + 1, z + 1);
+                double top7 = Context.HeightProvider.Get(x - 1, z - 1);
 
-            return (Math.Abs(top0 - top1) + Math.Abs(top2 - top3) +
-                    (Math.Abs(top4 - top5) + Math.Abs(top6 - top7)) * rsqr2) * (1.0f / (4 + 4 * rsqr2));
+                return (float)((
+                    Math.Abs(top0 - top1) +
+                    Math.Abs(top2 - top3) +
+                    Math.Abs(top4 - top5) * rsqr2 + 
+                    Math.Abs(top6 - top7) * rsqr2
+                    ) * (1.0f / (2 + 2 * rsqr2)));
+            }
         }
-        
+
         public int GetSolidTopRelative(int x, int y, int z)
         {
             if (x >= 0 && x < GridSizeH &&
@@ -657,62 +627,65 @@ namespace VoxelWorldEngine.Terrain
         //int _solidCheckIndex = 0;
         public override void Update(GameTime gameTime)
         {
-            for (int i = 0; i < _pendingActions.Length && (i - 1) <= _generationPhase; i++)
+            using (Profiler.CurrentProfiler.Begin("Tile Update"))
             {
-                Action action;
-                while (_pendingActions[i].TryDequeue(out action))
+                for (int i = 0; i < _pendingActions.Length && i <= ((int)_generationPhase + 1); i++)
                 {
-                    action();
+                    Action action;
+                    while (_pendingActions[i].TryDequeue(out action))
+                    {
+                        action();
+                    }
                 }
-            }
 
-            if (_previousGenerationPhase != _generationPhase)
-            {
-                OnGenerationPhaseChange();
-                _previousGenerationPhase = _generationPhase;
-            }
-
-            if (Parent.saveInitializationPhase <= 0)
-                return;
-
-            if (IsDirty && _generationPhase >= 1)
-            {
-                if (Graphics.Rebuild())
+                if (_previousGenerationPhase != _generationPhase)
                 {
-                    IsDirty = false;
+                    OnGenerationPhaseChange();
+                    _previousGenerationPhase = _generationPhase;
                 }
+
+                if (Parent.saveInitializationPhase <= 0)
+                    return;
+
+                if (IsDirty && _generationPhase >= GenerationStage.Surface)
+                {
+                    if (Graphics.Rebuild())
+                    {
+                        IsDirty = false;
+                    }
+                }
+
+                Graphics.Update(gameTime);
+
+                base.Update(gameTime);
+
+                //if (_isSparse)
+                //    _isSolid = false;
+                //else
+                //{
+                //    int plane = _solidCheckIndex++ % GridSizeV;
+
+                //    bool allSolid = true;
+                //    for (int z = 0; allSolid & z < GridSizeH; z++)
+                //    {
+                //        for (int x = 0; allSolid & x < GridSizeH; x++)
+                //        {
+                //            allSolid &= GetBlock(x, plane, z).PhysicsMaterial.IsSolid;
+                //        }
+                //    }
+                //    _isSolidPlane[plane] = allSolid;
+
+                //    if (_solidCheckIndex % GridSizeV == 0)
+                //    {
+                //        allSolid = true;
+                //        for (int y = 0; allSolid & y < GridSizeH; y++)
+                //        {
+                //            allSolid &= _isSolidPlane[y];
+                //        }
+                //        _isSolid = allSolid;
+                //    }
+                //}
             }
-
-            Graphics.Update(gameTime);
-
-            base.Update(gameTime);
-
-            //if (_isSparse)
-            //    _isSolid = false;
-            //else
-            //{
-            //    int plane = _solidCheckIndex++ % GridSizeV;
-
-            //    bool allSolid = true;
-            //    for (int z = 0; allSolid & z < GridSizeH; z++)
-            //    {
-            //        for (int x = 0; allSolid & x < GridSizeH; x++)
-            //        {
-            //            allSolid &= GetBlock(x, plane, z).PhysicsMaterial.IsSolid;
-            //        }
-            //    }
-            //    _isSolidPlane[plane] = allSolid;
-
-            //    if (_solidCheckIndex % GridSizeV == 0)
-            //    {
-            //        allSolid = true;
-            //        for (int y = 0; allSolid & y < GridSizeH; y++)
-            //        {
-            //            allSolid &= _isSolidPlane[y];
-            //        }
-            //        _isSolid = allSolid;
-            //    }
-            //}
         }
 
         public CrappyChunkStorage.RegionData.TileData Serialize()
@@ -724,7 +697,7 @@ namespace VoxelWorldEngine.Terrain
                 t._indexX = Index.X;
                 t._indexY = Index.Y;
                 t._indexZ = Index.Z;
-                t._generationState = _generationPhase;
+                t._generationState = (int)_generationPhase;
 
                 if (_gridBlock != null)
                 {
@@ -747,7 +720,7 @@ namespace VoxelWorldEngine.Terrain
         {
             lock (_lock)
             {
-                _generationPhase = data._generationState;
+                _generationPhase = (GenerationStage)data._generationState;
 
                 if (_isSparse)
                 {

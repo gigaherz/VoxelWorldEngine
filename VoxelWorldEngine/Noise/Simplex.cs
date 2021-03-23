@@ -16,12 +16,14 @@
  */
 
 using System;
+using VoxelWorldEngine.Maths;
+using VoxelWorldEngine.Util;
 
 namespace VoxelWorldEngine.Noise
 {
     public class Simplex : NoiseOctaves
     {
-        public Simplex(int seed, double scale) : base(seed, scale)
+        public Simplex(int seed, Vector3D scale) : base(seed, scale)
         {
         }
 
@@ -36,8 +38,8 @@ namespace VoxelWorldEngine.Noise
             double n0, n1, n2; // Noise contributions from the three corners
                                // Skew the input space to determine which simplex cell we're in
             double s = (xin + yin) * F2; // Hairy factor for 2D
-            int i = fastfloor(xin + s);
-            int j = fastfloor(yin + s);
+            int i = MathX.FastFloor(xin + s);
+            int j = MathX.FastFloor(yin + s);
             double t = (i + j) * G2;
             double X0 = i - t; // Unskew the cell origin back to (x,y) space
             double Y0 = j - t;
@@ -96,9 +98,9 @@ namespace VoxelWorldEngine.Noise
             double n0, n1, n2, n3; // Noise contributions from the four corners
                                    // Skew the input space to determine which simplex cell we're in
             double s = (xin + yin + zin) * F3; // Very nice and simple skew factor for 3D
-            int i = fastfloor(xin + s);
-            int j = fastfloor(yin + s);
-            int k = fastfloor(zin + s);
+            int i = MathX.FastFloor(xin + s);
+            int j = MathX.FastFloor(yin + s);
+            int k = MathX.FastFloor(zin + s);
             double t = (i + j + k) * G3;
             double X0 = i - t; // Unskew the cell origin back to (x,y,z) space
             double Y0 = j - t;

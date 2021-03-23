@@ -1,14 +1,8 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Diagnostics;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-using Microsoft.Xna.Framework;
+﻿using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Input;
 using VoxelWorldEngine.Maths;
 using VoxelWorldEngine.Rendering;
-using VoxelWorldEngine.Util;
+using VoxelWorldEngine.Util.Scheduler;
 
 namespace VoxelWorldEngine
 {
@@ -75,7 +69,7 @@ namespace VoxelWorldEngine
 
             if (Walking)
             {
-                if (VoxelGame.Instance.Grid.saveInitializationPhase > 0 && VoxelGame.Instance.Grid.ChunkExists(PlayerPosition))
+                if (VoxelGame.Instance.Grid.saveInitializationPhase > 0 && VoxelGame.Instance.Grid.TileExists(PlayerPosition))
                 {
                     if (move.LengthSquared() > 0)
                     {
