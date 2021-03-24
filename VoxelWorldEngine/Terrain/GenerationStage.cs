@@ -8,8 +8,7 @@ namespace VoxelWorldEngine.Terrain
 {
     public enum GenerationStage : int
     {
-        Unstarted = -1,
-        Density,
+        Unstarted,
         Terrain,
         Carving,
         Surface,

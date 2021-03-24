@@ -56,12 +56,12 @@ namespace VoxelWorldEngine.Terrain.Graphics
             if (Interlocked.Exchange(ref Busy, 1) != 0)
                 return false;
 
-            Tile.RunProcess(GenMeshes, GenerationStage.Terrain, PriorityClass.High, "Generating Meshes").ContinueWith(_ => Tile.InvokeAfter(GenerationStage.Terrain, AfterGenMeshes));
+            Tile.RunProcess(GenMeshes, PriorityClass.High, "Generating Meshes");
 
             return true;
         }
 
-        private void AfterGenMeshes()
+        private void AfterGenMeshes(bool ranImmediately)
         {
             using (Profiler.CurrentProfiler.Begin("After Generate Meshes"))
             {
@@ -91,10 +91,14 @@ namespace VoxelWorldEngine.Terrain.Graphics
 
         public void GenMeshes()
         {
+            if (!Tile.IsLoaded)
+                return;
             using (Profiler.CurrentProfiler.Begin("Generating Meshes"))
             {
                 GenMeshesPlain();
             }
+
+            Tile.ScheduleOnUpdate(AfterGenMeshes, "finish mesh generation");
         }
 
         public void GenMeshesPlain()
@@ -464,32 +468,35 @@ namespace VoxelWorldEngine.Terrain.Graphics
             if (Meshes.Count == 0)
                 return;
 
-            var offset = Tile.Centroid.RelativeTo(PlayerController.Instance.PlayerPosition) - Tile.RealSize / 2.0f - new Vector3(0,2.1f,0);
-            var world = Matrix.CreateTranslation(offset);
-
-            //var boundingBox = new BoundingBox(Tile.RealSize * -0.5f + offset, Tile.RealSize * 0.5f + offset);
-
-            var boundingBox = new BoundingBox(offset, Tile.RealSize + offset);
-
-            if (!camera.ViewFrustum.Intersects(boundingBox))
-                return;
-
-            RenderManager.Instance.CurrentEffect.Parameters["Projection"].SetValue(camera.Projection);
-            RenderManager.Instance.CurrentEffect.Parameters["View"].SetValue(camera.View);
-            RenderManager.Instance.CurrentEffect.Parameters["World"].SetValue(world);
-            RenderManager.Instance.CurrentEffect.Parameters["WorldViewIT"].SetValue(Matrix.Transpose(Matrix.Invert(world * camera.View)));
-
-            foreach (var pass in RenderManager.Instance.CurrentEffect.CurrentTechnique.Passes)
+            using (Profiler.CurrentProfiler.Begin("Tile Meshes"))
             {
-                pass.Apply();
+                var offset = Tile.Centroid.RelativeTo(PlayerController.Instance.PlayerPosition) - Tile.RealSize / 2.0f - new Vector3(0, 2.1f, 0);
+                var world = Matrix.CreateTranslation(offset);
 
-                GraphicsDevice.Textures[0] = RenderManager.Instance.TerrainTexture;
+                //var boundingBox = new BoundingBox(Tile.RealSize * -0.5f + offset, Tile.RealSize * 0.5f + offset);
 
-                foreach (var mesh in Meshes)
+                var boundingBox = new BoundingBox(offset, Tile.RealSize + offset);
+
+                if (!camera.ViewFrustum.Intersects(boundingBox))
+                    return;
+
+                RenderManager.Instance.CurrentEffect.Parameters["Projection"].SetValue(camera.Projection);
+                RenderManager.Instance.CurrentEffect.Parameters["View"].SetValue(camera.View);
+                RenderManager.Instance.CurrentEffect.Parameters["World"].SetValue(world);
+                RenderManager.Instance.CurrentEffect.Parameters["WorldViewIT"].SetValue(Matrix.Transpose(Matrix.Invert(world * camera.View)));
+
+                foreach (var pass in RenderManager.Instance.CurrentEffect.CurrentTechnique.Passes)
                 {
-                    if (mesh.Queue == queue)
+                    pass.Apply();
+
+                    GraphicsDevice.Textures[0] = RenderManager.Instance.TerrainTexture;
+
+                    foreach (var mesh in Meshes)
                     {
-                        mesh.Draw(gameTime);
+                        if (mesh.Queue == queue)
+                        {
+                            mesh.Draw(gameTime);
+                        }
                     }
                 }
             }

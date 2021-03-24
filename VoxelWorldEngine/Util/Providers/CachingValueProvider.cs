@@ -79,7 +79,7 @@ namespace VoxelWorldEngine.Util.Providers
                     int yy = y * size.X;
                     for (int x = 0; x < size.X; x++)
                     {
-                        values[zz + yy + x] = source.Get(x + offset.X, y + offset.X, z + offset.X);
+                        values[zz + yy + x] = source.Get(x + offset.X, y + offset.Y, z + offset.Z);
                     }
                 }
             }

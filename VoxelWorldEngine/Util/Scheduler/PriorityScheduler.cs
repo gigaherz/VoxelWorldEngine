@@ -17,7 +17,7 @@ namespace VoxelWorldEngine.Util.Scheduler
 
         private Thread[] _threads;
         public int MaximumConcurrencyLevel { get; set; } = Math.Max(1, Environment.ProcessorCount - 1);
-        public int QueuedTaskCount => _tasks.Select(t => t.Count).Sum();
+        public int QueuedTaskCount => _tasks.Sum(t => t.Count);
 
         EntityPosition _lastPlayerPosition;
 
@@ -25,7 +25,7 @@ namespace VoxelWorldEngine.Util.Scheduler
 
         private PriorityScheduler()
         {
-            _tasks = new List<PriorityTaskBase>[Enum.GetValues(typeof(PriorityClass)).Cast<PriorityClass>().Select(v => (int)v).Max() + 1];
+            _tasks = new List<PriorityTaskBase>[Enum.GetValues(typeof(PriorityClass)).Cast<PriorityClass>().Max(v => (int)v) + 1];
             for (int i = 0; i < _tasks.Length; i++)
                 _tasks[i] = new List<PriorityTaskBase>();
 
@@ -98,20 +98,20 @@ namespace VoxelWorldEngine.Util.Scheduler
                                             minPriority = p;
                                         }
                                     }
-                                    if (task != null)
+                                     if (task != null)
                                     {
                                         if (minIndex != list.Count - 1)
                                         {
                                             list[minIndex] = list[list.Count - 1];
                                         }
                                         list.RemoveAt(list.Count - 1);
-                                        if (list.Count > 0)
-                                        {
-                                            _awaitTasks.Set();
-                                        }
                                         break;
                                     }
                                 }
+                            }
+                            if (_tasks.Sum(t => t.Count) > 0)
+                            {
+                                _awaitTasks.Set();
                             }
                         }
                     }

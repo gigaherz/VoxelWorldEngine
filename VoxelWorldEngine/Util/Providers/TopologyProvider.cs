@@ -38,12 +38,12 @@ namespace VoxelWorldEngine.Util.Providers
 
         public override (double, double, double) Get(int x, int z)
         {
-            var height = HeightCurve(heightSource.Get(x,z) * 0.9) * 5;
+            var height = HeightCurve(heightSource.Get(x,z));
 
             double roughness = 0;
 #if true
             var biomePlateauHeight = 10;
-            var mountainness = MathX.Clamp((height - biomePlateauHeight) * 0.01, -1, 1);
+            var mountainness = MathX.Clamp((height - biomePlateauHeight) * 0.0001, -1, 1);
 
             roughness = 0.4 + roughnessSource.Get(x, z) * 0.25;
             roughness *= roughness;
@@ -64,7 +64,7 @@ namespace VoxelWorldEngine.Util.Providers
             
 #endif
 
-            var baseHeight = Average + Range * 0.35 * height;
+            var baseHeight = Average + height;
 #if false
             int yOffset = 0;
             if (phc > 0)
@@ -88,10 +88,13 @@ namespace VoxelWorldEngine.Util.Providers
             yOffset = Math.Max(0, o1 - o0);
         }
 
-        private double HeightCurve(double inp)
+        private double HeightCurve(double x)
         {
-            //0.3*x+0.7*x^3+0.065*sin(x*2*3.141592)
-            return 0.3 * inp + 0.7 * Math.Pow(inp, 3) + 0.065 * Math.Sin(inp * 2 * Math.PI);
+            //0.3*x+0.1*x^3+0.065*sin(x*2*3.141592)
+            //var outp = 0.3 * inp + 0.1 * Math.Pow(inp, 3) + 0.065 * Math.Sin(inp * 2 * Math.PI);
+            x *= 2;
+            var outp = Math.Sign(x) * (Math.Sin(x * x * 4) + 4.5 * x * x) * 7;
+            return outp;
         }
 
         private double SharpnessCurve(double initial)

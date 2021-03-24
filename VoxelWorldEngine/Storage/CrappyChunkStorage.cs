@@ -157,11 +157,18 @@ namespace VoxelWorldEngine.Storage
                 {
                     dataCache.Remove(data);
                     dataCache.Add(data);
+
+                    while (dataCache.Count > 5)
+                        dataCache.RemoveAt(0);
+
                     return data;
                 }
 
                 data = new RegionData() { Region = region };
                 dataCache.Add(data);
+
+                while (dataCache.Count > 5)
+                    dataCache.RemoveAt(0);
             }
 
             lock (data)
@@ -288,9 +295,6 @@ namespace VoxelWorldEngine.Storage
                         }
                     }
                 }
-
-                if (dataCache.Count > 32)
-                    dataCache.RemoveAt(0);
 
                 return data;
             }

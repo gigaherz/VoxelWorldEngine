@@ -65,6 +65,7 @@
     <Compile Include="Terrain\Graphics\GridGraphics.cs" />
     <Compile Include="Terrain\Graphics\TileMesh.cs" />
     <Compile Include="Terrain\GenerationContext.cs" />
+    <Compile Include="Terrain\ThreadSafeTileAccess.cs" />
     <Compile Include="Util\IInterpolator.cs" />
     <Compile Include="Util\Performance\BasicProfiler.cs" />
     <Compile Include="Util\Performance\DummyProfiler.cs" />

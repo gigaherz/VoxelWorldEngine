@@ -27,7 +27,7 @@ namespace VoxelWorldEngine.Terrain
         {
             Seed = settings.Seed;
             var PerlinDensity = new Simplex(Seed, ((Vector3D)Tile.VoxelSize) * 0.15);
-            var PerlinHeight = new Simplex(Seed * 31, ((Vector3D)Tile.VoxelSize) * 0.0005);
+            var PerlinHeight = new Simplex(Seed * 31, ((Vector3D)Tile.VoxelSize) * 0.001 /** 0.0005*/);
             var PerlinRoughness = new Simplex(Seed * 53, ((Vector3D)Tile.VoxelSize) * 0.005);
             //var PerlinSharpness = new Simplex(Seed * 71, 1 / 7.0);
             var PerlinOffset = new Simplex(Seed * 113, 1);

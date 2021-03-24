@@ -43,7 +43,7 @@ namespace VoxelWorldEngine.Util.Performance
             {
                 using (var writer = new StreamWriter(stream))
                 {
-                    long totalTimeRoot = RootNode.Frames.Select(f => f.TotalTime.ElapsedTicks).Sum() / 10;
+                    long totalTimeRoot = RootNode.Frames.Sum(f => f.TotalTime.ElapsedTicks) / 10;
 
                     var nodes = Nodes.Values.ToList();
 
@@ -52,9 +52,9 @@ namespace VoxelWorldEngine.Util.Performance
                     {
                         bool isLast = (i + 1) == nodes.Count;
                         Node node = nodes[i];
-                        long totalTimeUS = node.Frames.Select(f => f.TotalTime.ElapsedTicks).Sum() / 10;
-                        long selfTimeUS = node.Frames.Select(f => f.SelfTime.ElapsedTicks).Sum() / 10;
-                        int callCount = node.Frames.Select(f => f.CallCount).Sum();
+                        long totalTimeUS = node.Frames.Sum(f => f.TotalTime.ElapsedTicks) / 10;
+                        long selfTimeUS = node.Frames.Sum(f => f.SelfTime.ElapsedTicks) / 10;
+                        int callCount = node.Frames.Sum(f => f.CallCount);
                         int percentOfRoot = (int)(selfTimeUS * 100 / totalTimeRoot);
                         if (isLast)
                             writer.Write("  └ ");

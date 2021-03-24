@@ -5,10 +5,8 @@ using System.Diagnostics;
 using System.Linq;
 using System.Runtime.Serialization;
 using System.Threading;
-using System.Threading.Tasks;
 using Microsoft.Xna.Framework;
 using VoxelWorldEngine.Maths;
-using VoxelWorldEngine.Noise;
 using VoxelWorldEngine.Objects;
 using VoxelWorldEngine.Storage;
 using VoxelWorldEngine.Terrain.Graphics;
@@ -21,11 +19,14 @@ namespace VoxelWorldEngine.Terrain
 {
     public class Tile : GameComponent
     {
+        private static int NextInstanceId = 0;
+        public readonly int UniqueInstanceId = NextInstanceId++;
+
         // Tile properties
         private static readonly int RealSizeH = 32;
         private static readonly int RealSizeV = 32;
-        private static readonly int GridSizeH = 64;
-        private static readonly int GridSizeV = 64;
+        private static readonly int GridSizeH = 32;
+        private static readonly int GridSizeV = 32;
         private static readonly float VoxelSizeH = RealSizeH / (float)GridSizeH;
         private static readonly float VoxelSizeV = RealSizeV / (float)GridSizeV;
         public static readonly Vector3I GridSize = new Vector3I(GridSizeH, GridSizeV, GridSizeH);
@@ -36,8 +37,7 @@ namespace VoxelWorldEngine.Terrain
         private int[] _heightmap;
         private readonly CubeTree<ISerializable> _gridExtra = new CubeTree<ISerializable>();
 
-        private volatile GenerationStage _generationPhase = GenerationStage.Unstarted;
-        private GenerationStage _previousGenerationPhase = GenerationStage.Unstarted;
+        private GenerationStage _previousCompletedPhase = GenerationStage.Unstarted;
         private bool _isSparse = true;
 
         private bool _isSolid = false;
@@ -47,10 +47,10 @@ namespace VoxelWorldEngine.Terrain
 
         public bool IsSparse => _isSparse;
         public bool IsSolid => _isSolid;
-        public GenerationStage GenerationPhase => _generationPhase;
-        public GenerationStage RequiredPhase { get; private set; } = GenerationStage.Density;
+        public GenerationStage RequiredPhase { get; private set; } = GenerationStage.Unstarted;
+        public GenerationStage GeneratingPhase { get; private set; } = GenerationStage.Unstarted;
+        public GenerationStage CompletedPhase { get; private set; } = GenerationStage.Unstarted;
 
-        public bool Initialized { get; private set; }
         public bool IsDirty { get; private set; }
         public bool IsSaved { get; }
 
@@ -66,18 +66,14 @@ namespace VoxelWorldEngine.Terrain
 
         public EntityPosition Centroid { get; }
 
-        private readonly ProviderMap valueProviders = new ProviderMap();
-
-        public ValueProvider3D<double> GetRawDensityProvider() =>
-            valueProviders.GetOrAdd(ProviderType.RAW_DENSITY, k =>
-                new CachingValueProvider3D<double>(Offset, GridSize, Context.RawDensityProvider));
-        public ValueProvider2D<(double, double, double)> GetTopologyProvider() =>
-            valueProviders.GetOrAdd(ProviderType.TOPOLOGY, k =>
-                new CachingValueProvider2D<(double, double, double)>(Offset.XZ, GridSize.XZ, Context.TopologyProvider));
-        public ValueProvider3D<double> GetDensityProvider() =>
-            valueProviders.GetOrAdd(ProviderType.DENSITY, k => new DensityProvider(GetRawDensityProvider(), GetTopologyProvider()));
+        public int UpdateTaskCount => _pendingActions.Sum(t => t.Count());
 
         private readonly ConcurrentQueue<Action>[] _pendingActions;
+
+        public override string ToString()
+        {
+            return $"{{{Index}: {CompletedPhase}/{GeneratingPhase}/{RequiredPhase}}}";
+        }
 
         public Tile(Grid parent, Vector3I index)
             : base(parent.Game)
@@ -92,7 +88,7 @@ namespace VoxelWorldEngine.Terrain
             Graphics = new TileGraphics(this);
 
             List<ConcurrentQueue<Action>> acts = new List<ConcurrentQueue<Action>>();
-            for(int i=0;i<=((int)GenerationStage.Completed+1);i++)
+            foreach (var v in Enum.GetValues(typeof(GenerationStage)))
             {
                 acts.Add(new ConcurrentQueue<Action>());
             }
@@ -100,19 +96,23 @@ namespace VoxelWorldEngine.Terrain
             _pendingActions = acts.ToArray();
         }
 
-        private void OnGenerationPhaseChange()
+        private void OnCompletedPhaseChange()
         {
             Parent.TilePhaseChanged(this);
         }
 
-        public bool Load()
+        public void Load()
         {
             IsLoaded = true;
         }
 
-        public bool Unload()
+        public void Unload(bool disposing = false)
         {
             IsLoaded = false;
+            RequiredPhase = CompletedPhase;
+            Parent.ClearInProgress(this);
+            Parent.ClearPending(this);
+            Graphics.Dispose();
         }
 
         /// <summary>
@@ -121,65 +121,69 @@ namespace VoxelWorldEngine.Terrain
         /// <param name="phase"></param>
         /// <param name="action"></param>
         /// <returns>True if the action was executed immediately</returns>
-        public bool InvokeAfter(GenerationStage phase, Action action)
+        public bool InvokeWhenCompleted(GenerationStage phase, Action<bool> action, string reason)
         {
-            if (_generationPhase >= phase && Thread.CurrentThread == VoxelGame.GameThread)
+            action = TaskInProgress.Start(this, action, $"InvokeWhenCompleted[{phase}]:{reason}");
+            if (CompletedPhase >= phase && Thread.CurrentThread == VoxelGame.GameThread)
             {
-                action();
+                action(true);
                 return true;
             }
             else
             {
-                _pendingActions[(int)phase + 1].Enqueue(action);
+                _pendingActions[(int)phase].Enqueue(() => action(false));
                 return false;
             }
         }
 
-        public void ScheduleOnUpdate(Action action)
+        public void ScheduleOnUpdate(Action<bool> action, string reason)
         {
-            InvokeAfter(GenerationPhase, action);
+            InvokeWhenCompleted(CompletedPhase, action, reason);
         }
 
         protected override void Dispose(bool disposing)
         {
             base.Dispose(disposing);
 
-            Graphics.Dispose();
+            Unload(true);
         }
 
         public override void Initialize()
         {
             base.Initialize();
 
-            Initialized = true;
-
-            RequirePhase(RequiredPhase);
+            Load();
         }
 
-        private void MarkNeighboursDirty()
+        private void OnChanged(bool ranImmediately)
         {
             using (Profiler.CurrentProfiler.Begin("Mark Neighbours Dirty"))
             {
-                InvokeAfter(GenerationPhase, () =>
-                {
-                    if (!_isSparse)
-                        IsDirty = true;
+                if (!_isSparse)
+                    IsDirty = true;
 
-                    Tile tile;
-                    if (Parent.Find(Index.Offset(-1, 0, 0), out tile)) tile.MarkDirty();
-                    if (Parent.Find(Index.Offset(+1, 0, 0), out tile)) tile.MarkDirty();
-                    if (Parent.Find(Index.Offset(0, -1, 0), out tile)) tile.MarkDirty();
-                    if (Parent.Find(Index.Offset(0, +1, 0), out tile)) tile.MarkDirty();
-                    if (Parent.Find(Index.Offset(0, 0, -1), out tile)) tile.MarkDirty();
-                    if (Parent.Find(Index.Offset(0, 0, +1), out tile)) tile.MarkDirty();
-                });
+                Tile tile;
+                if (Parent.GetTileIfExists(Index.Offset(-1, 0, 0), out tile)) tile.MarkDirty();
+                if (Parent.GetTileIfExists(Index.Offset(+1, 0, 0), out tile)) tile.MarkDirty();
+                if (Parent.GetTileIfExists(Index.Offset(0, -1, 0), out tile)) tile.MarkDirty();
+                if (Parent.GetTileIfExists(Index.Offset(0, +1, 0), out tile)) tile.MarkDirty();
+                if (Parent.GetTileIfExists(Index.Offset(0, 0, -1), out tile)) tile.MarkDirty();
+                if (Parent.GetTileIfExists(Index.Offset(0, 0, +1), out tile)) tile.MarkDirty();
             }
         }
 
-        public Task RunProcess(Action process, GenerationStage phase, PriorityClass priorityClass, string processName)
+        public void RunProcess(Action process, PriorityClass priorityClass, string processName)
         {
-            //Debug.WriteLine($"Starting Process {processName} for tile {Index} during phase {phase}");
-            return PriorityScheduler.Schedule(process, priorityClass, Centroid).Task;
+            process = TaskInProgress.Start(this, process, $"RunProcess[{processName}]");
+            LogTileMessage($"Starting Process '{processName}'...");
+            PriorityScheduler.Schedule(process, priorityClass, Centroid);
+        }
+
+        private volatile int _logCount;
+
+        public void LogTileMessage(string message)
+        {
+            Program.DebugWriteLine($"[{Index}/{UniqueInstanceId}] {Interlocked.Increment(ref _logCount)} {(int)GeneratingPhase}/{GeneratingPhase}: {message}");
         }
 
         private void MarkDirty()
@@ -188,88 +192,109 @@ namespace VoxelWorldEngine.Terrain
                 IsDirty = true;
         }
 
-        public bool RequirePhase(GenerationStage required)
+        public bool IsAtPhase(GenerationStage stage)
         {
-            using (Profiler.CurrentProfiler.Begin("Require Phase"))
+            return CompletedPhase >= stage;
+        }
+
+        public bool SetRequiredPhase(GenerationStage required)
+        {
+            var oldRequired = RequiredPhase;
+
+            RequiredPhase = (GenerationStage)Math.Max(Math.Max((int)RequiredPhase, (int)required), Math.Max((int)GeneratingPhase, (int)CompletedPhase));
+
+            if (oldRequired != RequiredPhase && !IsAtPhase(RequiredPhase))
             {
-                if (GenerationPhase >= required)
-                    return true;
-
-                RequiredPhase = (GenerationStage)Math.Max((int)RequiredPhase, (int)required);
-
-                if (!Initialized)
-                    return false;
-
-                switch (GenerationPhase)
-                {
-                    case GenerationStage.Unstarted: PrepareGenerationDensity(); break;
-                    case GenerationStage.Density: PrepareGenerationTerrain(); break;
-                    case GenerationStage.Terrain: PrepareGenerationSurface(); break;
-                    default:
-                        _generationPhase = GenerationStage.Completed; break;
-                }
-
-                return false;
-            }
-        }
-
-        void PrepareGenerationDensity()
-        {
-            if (_generationPhase >= GenerationStage.Density)
-                return;
-
-            RunProcess(GenDensity, GenerationStage.Density, PriorityClass.Average, "Generating Density Grid");
-        }
-
-        void PrepareGenerationTerrain()
-        {
-            if (_generationPhase >= GenerationStage.Terrain)
-                return;
-
-            RunProcess(GenTerrain, GenerationStage.Terrain, PriorityClass.Average, "Calculating Terrain");
-        }
-
-        private void PrepareGenerationSurface()
-        {
-            if (_generationPhase >= GenerationStage.Surface)
-                return;
-
-            if (_isSparse)
-            {
-                // We don't need to generate surfaces so don't queue the task at all
-                _generationPhase = GenerationStage.Surface;
-                return;
+                LogTileMessage($"New RequiredPhase: {RequiredPhase}");
             }
 
-            Task.WhenAll(
-                Parent.Request(Index.Offset(0, 1, 0), GenerationStage.Terrain, "surface generation up"),
-                Parent.Request(Index.Offset(0, -1, 0), GenerationStage.Terrain, "surface generation down")
-            ).ContinueWith(_ => RunProcess(PostProcessSurface, GenerationStage.Surface, PriorityClass.Average, "Processing Surface"));
+            return IsAtPhase(RequiredPhase);
         }
 
-        void GenDensity()
+        public bool ScheduleNextPhase()
         {
-            using (Profiler.CurrentProfiler.Begin("Generating Density"))
+            if (IsAtPhase(RequiredPhase))
             {
-                if (Offset.Y + GridSize.Y >= Context.WorldFloor)
-                {
-                    var densityProvider = GetDensityProvider();
-                    densityProvider.Get(Offset);
-                }
-                _generationPhase = GenerationStage.Density;
-
-                if (RequiredPhase > _generationPhase)
-                    PrepareGenerationTerrain();
+                LogTileMessage($"No next phase, {CompletedPhase} == {RequiredPhase}.");
+                Parent.ClearInProgress(this);
+                return true;
             }
+
+            if (CompletedPhase >= GenerationStage.Completed)
+                return true;
+
+            GeneratingPhase = CompletedPhase + 1;
+
+            if (GeneratingPhase < GenerationStage.Completed) Parent.SetInProgress(this);
+
+            switch (GeneratingPhase)
+            {
+                case GenerationStage.Terrain:
+                    RunProcess(GenTerrain, PriorityClass.Average, "Calculating Terrain");
+                    break;
+                case GenerationStage.Surface:
+                    if (_isSparse)
+                    {
+                        // We don't need to generate surfaces in a sparse tile, so don't queue any task at all!
+                        LogTileMessage($"Skipping Surface Generation, Tile is Sparse...");
+                        PhaseCompleted();
+                    }
+                    else
+                    {
+                        Parent.ClearInProgress(this);
+                        if (!Parent.Request(Index.Offset(0, 1, 0), GenerationStage.Terrain, "surface generation up", (b, t) =>
+                        {
+                            LogTileMessage("Tile above loaded.");
+                            if (!Parent.Request(Index.Offset(0, -1, 0), GenerationStage.Terrain, "surface generation down", (b2, t2) =>
+                            {
+                                LogTileMessage("Tile below loaded.");
+                                Parent.SetInProgress(this);
+                                RunProcess(GenSurface, PriorityClass.Average, "Processing Surface");
+                            }))
+                            {
+                                LogTileMessage("Waiting for tile below...");
+                            }
+                        }))
+                        {
+                            LogTileMessage("Waiting for tile above...");
+                        }
+                    }
+                    break;
+                case GenerationStage.Completed:
+                    LogTileMessage($"Generation Complete.");
+                    CompletedPhase = GeneratingPhase;
+                    Parent.ClearInProgress(this);
+                    break;
+                // TODO: Remaining stages.
+                default:
+                    PhaseCompleted();
+                    break;
+            }
+
+            return false;
+        }
+
+        private void PhaseCompleted()
+        {
+            LogTileMessage($"Phase {GeneratingPhase} completed on the way to {RequiredPhase}...");
+            CompletedPhase = GeneratingPhase;
+            ScheduleOnUpdate(OnChanged, "notify neighbours");
+            ScheduleNextPhase();
         }
 
         void GenTerrain()
         {
+            if (!IsLoaded)
+            {
+                LogTileMessage($"Cancelling GenTerrain, Tile is Unloaded!");
+                return;
+            }
+
             using (Profiler.CurrentProfiler.Begin("Generating Terrain"))
             {
                 if (Offset.Y + GridSize.Y >= Context.WorldFloor)
                 {
-                    var densityProvider = GetDensityProvider();
+                    var densityProvider = new CachingValueProvider3D<double>(Offset, GridSize, new DensityProvider(Context.RawDensityProvider, Context.TopologyProvider));
 
                     //lock (_gridBlock)
                     {
@@ -330,69 +355,72 @@ namespace VoxelWorldEngine.Terrain
                     }
                 }
 
-                _generationPhase = GenerationStage.Terrain;
-
-                if (RequiredPhase > _generationPhase)
-                    PrepareGenerationSurface();
-
-                InvokeAfter(_generationPhase, MarkNeighboursDirty);
             }
+
+            PhaseCompleted();
         }
 
-
         private readonly float rsqr2 = 1.0f / (float)Math.Sqrt(2);
-        private void PostProcessSurface()
+        private void GenSurface()
         {
-            using (Profiler.CurrentProfiler.Begin("Processing Surface"))
+            if (!IsLoaded)
             {
+                LogTileMessage($"Cancelling GenSurface, Tile is Unloaded!");
+                return;
+            }
+
+            using (Profiler.CurrentProfiler.Begin("Generating Surface"))
+            {
+                List<(int, int, int, Block)> otherBlockChanges = new List<(int, int, int, Block)>();
                 lock (_lock)
                 {
-                    var densityProvider = GetDensityProvider();
-                    var topologyProvider = GetTopologyProvider();
                     int relativeWaterLevel = Context.WaterLevel - Offset.Y;
                     Vector2I xZ = Offset.XZ;
                     for (int z = 0; z < GridSizeH; z++)
                     {
                         for (int x = 0; x < GridSizeH; x++)
                         {
-                            var (roughness, dbottom, dtop) = topologyProvider.Get(xZ.Offset(x, z));
+                            var y = FindSurfaceFast(x, z);
+                            var block = GetBlockRelative(x, y, z);
+                            var above = GetBlockRelative(x, y + 1, z);
 
-                            for (int y = 0; y < GridSizeV; y++)
+                            if (block.PhysicsMaterial.IsSolid && !above.PhysicsMaterial.IsSolid)
                             {
-                                var block = GetBlock(x, y, z);
-                                var above = (y + 1) < GridSizeV ? GetBlock(x, y + 1, z) : GetBlockRelative(x, y + 1, z);
+                                // Found surface!
 
-                                if (block.PhysicsMaterial.IsSolid && !above.PhysicsMaterial.IsSolid)
+                                float avgSlope = GetSlopeAt(x, y, z, 10);
+                                if (avgSlope > 2)
+                                    continue;
+                                //double avgSlope = GetGradientAt(x, y, z);
+                                //if (avgSlope > 0.01)
+                                //    continue;
+
+                                int yCeiling = 128; // GetProbableCeilingPosition(x, y + 1, z, GridSize.Y); // search up to one chunk's height up, for now
+                                bool hasCeiling = (yCeiling - y) < GridSize.Y;
+
+                                if (GetSurfaceMaterials(above, y, relativeWaterLevel, hasCeiling, out var replaceWith))
                                 {
-                                    // Found surface!
-
-                                    float avgSlope = GetSlopeAt(x, y, z, 10, roughness, dbottom, dtop);
-                                    if (avgSlope > 2)
-                                        continue;
-                                    //double avgSlope = GetGradientAt(x, y, z);
-                                    //if (avgSlope > 0.01)
-                                    //    continue;
-
-                                    int yCeiling = 128; // GetProbableCeilingPosition(x, y + 1, z, GridSize.Y); // search up to one chunk's height up, for now
-                                    bool hasCeiling = (yCeiling - y) < GridSize.Y;
-
-                                    if (GetSurfaceMaterials(above, y, relativeWaterLevel, hasCeiling, out var replaceWith))
+                                    for (int i = 0; i < replaceWith.Length; i++)
                                     {
-                                        for (int i = 0; i < replaceWith.Length; i++)
-                                        {
-                                            SetBlockRelativeNoLock(x, y - i, z, replaceWith[i]);
-                                        }
+                                        if (x >= 0 && x < GridSizeH &&
+                                            y >= 0 && y < GridSizeV &&
+                                            z >= 0 && z < GridSizeH)
+                                            SetBlockNoLock(x, y, z, block);
+
+                                        otherBlockChanges.Add((x, y - i, z, replaceWith[i]));
                                     }
                                 }
                             }
                         }
                     }
-
-                    _generationPhase = GenerationStage.Surface;
                 }
-
-                InvokeAfter(_generationPhase, MarkNeighboursDirty);
+                foreach(var (x, y, z, b) in otherBlockChanges)
+                {
+                    SetBlockRelativeNoLock(x, y, z, b);
+                }
             }
+
+            PhaseCompleted();
         }
 
         private bool GetSurfaceMaterials(Block above, int y, int relativeWaterLevel, bool hasCeiling, out Block[] replaceWith)
@@ -456,44 +484,7 @@ namespace VoxelWorldEngine.Terrain
             return p.X >= 0 && p.Y >= 0 && p.Z >= 0 && p.X < GridSize.X && p.Y < GridSize.Y && p.Z < GridSize.Z;
         }
 
-        public int GetSurfacePosition(int x, int top, int z, int maxscan)
-        {
-            using (Profiler.CurrentProfiler.Begin("Find Surface"))
-            {
-                var pos = Offset.Offset(x, top, z);
-                var startY = pos.Y;
-
-                var densityProvider = GetDensityProvider();
-                double density;
-                do
-                {
-                    pos += new Vector3I(0, 1, 0);
-                    if (IsPosInside(pos))
-                    {
-                        density = densityProvider.Get(pos);
-                    }
-                    else
-                    {
-                        var task = Parent.RequireTileCoords(pos, GenerationStage.Terrain, "surface generation find ceiling");
-                        task.Wait();
-                        var tile = task.Result;
-                        if (tile != null)
-                        {
-                            density = tile.GetDensityProvider().Get(pos);
-                        }
-                        else
-                        {
-                            density = 0;
-                        }
-                    }
-                }
-                while (density >= 0 && (pos.Y - startY) < maxscan);
-
-                return (pos.Y - startY) + top;
-            }
-        }
-
-        private float GetSlopeAt(int x, int y, int z, int searchLimit, double roughness, double dbottom, double dtop)
+        private float GetSlopeAt(int x, int y, int z, int searchLimit)
         {
             using (Profiler.CurrentProfiler.Begin("Calculate Slope"))
             {
@@ -513,6 +504,26 @@ namespace VoxelWorldEngine.Terrain
                     Math.Abs(top6 - top7) * rsqr2
                     ) * (1.0f / (2 + 2 * rsqr2)));
             }
+        }
+
+        private int FindSurfaceFast(int x, int z)
+        {
+            var y = GetSolidTop(x, z);
+            if (y == GridSizeV - 1)
+            {
+                if (Parent.GetTileIfExists(Index.Offset(0,1,0), out var above))
+                {
+                    return above.GetSolidTop(x, z)+GridSizeV;
+                }
+            }
+            else if (y == 0)
+            {
+                if (Parent.GetTileIfExists(Index.Offset(0, 1, 0), out var below))
+                {
+                    return below.GetSolidTop(x, z)-GridSizeV;
+                }
+            }
+            return y;
         }
 
         public int GetSolidTopRelative(int x, int y, int z)
@@ -629,62 +640,87 @@ namespace VoxelWorldEngine.Terrain
         {
             using (Profiler.CurrentProfiler.Begin("Tile Update"))
             {
-                for (int i = 0; i < _pendingActions.Length && i <= ((int)_generationPhase + 1); i++)
+
+                using (Profiler.CurrentProfiler.Begin("Tile Update 2"))
                 {
-                    Action action;
-                    while (_pendingActions[i].TryDequeue(out action))
+
+                    using (Profiler.CurrentProfiler.Begin("Processing Tasks"))
                     {
-                        action();
+                        for (int i = 0; i < _pendingActions.Length && i <= (int)CompletedPhase; i++)
+                        {
+                            while (_pendingActions[i].TryDequeue(out var action))
+                            {
+                                action();
+                            }
+                        }
                     }
-                }
 
-                if (_previousGenerationPhase != _generationPhase)
-                {
-                    OnGenerationPhaseChange();
-                    _previousGenerationPhase = _generationPhase;
-                }
-
-                if (Parent.saveInitializationPhase <= 0)
-                    return;
-
-                if (IsDirty && _generationPhase >= GenerationStage.Surface)
-                {
-                    if (Graphics.Rebuild())
+                    if (_previousCompletedPhase != CompletedPhase)
                     {
-                        IsDirty = false;
+                        _previousCompletedPhase = CompletedPhase;
+                        using (Profiler.CurrentProfiler.Begin("Notifying Listeners"))
+                        {
+                            OnCompletedPhaseChange();
+                        }
                     }
+
+                    /*if (CompletedPhase == GenerationStage.Unstarted && RequiredPhase > GenerationStage.Unstarted && GeneratingPhase == CompletedPhase)
+                    {
+                        ScheduleNextPhase();
+                    }*/
+
+                    if (Parent.saveInitializationPhase <= 0)
+                        return;
+
+                    if (IsDirty && CompletedPhase >= GenerationStage.Surface)
+                    {
+                        using (Profiler.CurrentProfiler.Begin("Graphics Rebuild"))
+                        {
+                            if (Graphics.Rebuild())
+                            {
+                                IsDirty = false;
+                            }
+                        }
+                    }
+
+                    using (Profiler.CurrentProfiler.Begin("Graphics Update"))
+                    {
+                        Graphics.Update(gameTime);
+                    }
+
+                    using (Profiler.CurrentProfiler.Begin("base.Update"))
+                    {
+                        base.Update(gameTime);
+                    }
+
+
+                    //if (_isSparse)
+                    //    _isSolid = false;
+                    //else
+                    //{
+                    //    int plane = _solidCheckIndex++ % GridSizeV;
+
+                    //    bool allSolid = true;
+                    //    for (int z = 0; allSolid & z < GridSizeH; z++)
+                    //    {
+                    //        for (int x = 0; allSolid & x < GridSizeH; x++)
+                    //        {
+                    //            allSolid &= GetBlock(x, plane, z).PhysicsMaterial.IsSolid;
+                    //        }
+                    //    }
+                    //    _isSolidPlane[plane] = allSolid;
+
+                    //    if (_solidCheckIndex % GridSizeV == 0)
+                    //    {
+                    //        allSolid = true;
+                    //        for (int y = 0; allSolid & y < GridSizeH; y++)
+                    //        {
+                    //            allSolid &= _isSolidPlane[y];
+                    //        }
+                    //        _isSolid = allSolid;
+                    //    }
+                    //}
                 }
-
-                Graphics.Update(gameTime);
-
-                base.Update(gameTime);
-
-                //if (_isSparse)
-                //    _isSolid = false;
-                //else
-                //{
-                //    int plane = _solidCheckIndex++ % GridSizeV;
-
-                //    bool allSolid = true;
-                //    for (int z = 0; allSolid & z < GridSizeH; z++)
-                //    {
-                //        for (int x = 0; allSolid & x < GridSizeH; x++)
-                //        {
-                //            allSolid &= GetBlock(x, plane, z).PhysicsMaterial.IsSolid;
-                //        }
-                //    }
-                //    _isSolidPlane[plane] = allSolid;
-
-                //    if (_solidCheckIndex % GridSizeV == 0)
-                //    {
-                //        allSolid = true;
-                //        for (int y = 0; allSolid & y < GridSizeH; y++)
-                //        {
-                //            allSolid &= _isSolidPlane[y];
-                //        }
-                //        _isSolid = allSolid;
-                //    }
-                //}
             }
         }
 
@@ -697,7 +733,7 @@ namespace VoxelWorldEngine.Terrain
                 t._indexX = Index.X;
                 t._indexY = Index.Y;
                 t._indexZ = Index.Z;
-                t._generationState = (int)_generationPhase;
+                t._generationState = (int)CompletedPhase;
 
                 if (_gridBlock != null)
                 {
@@ -720,7 +756,7 @@ namespace VoxelWorldEngine.Terrain
         {
             lock (_lock)
             {
-                _generationPhase = (GenerationStage)data._generationState;
+                GeneratingPhase = CompletedPhase = (GenerationStage)data._generationState;
 
                 if (_isSparse)
                 {
@@ -734,6 +770,63 @@ namespace VoxelWorldEngine.Terrain
                 Array.Copy(data._heightmap, _heightmap, _heightmap.Length);
 
                 IsDirty = true;
+            }
+        }
+
+        private readonly List<TaskInProgress> tasksInProgess = new List<TaskInProgress>();
+        private class TaskInProgress
+        {
+            private readonly Tile tile;
+            private readonly string name;
+            private object action;
+
+            private TaskInProgress(Tile tile, string name)
+            {
+                this.tile = tile;
+                this.name = name;
+            }
+
+            public override string ToString()
+            {
+                return $"{{Task:{name} at {tile.Index}}}";
+            }
+
+            public static Action Start(Tile tile, Action action, string name)
+            {
+                var task = new TaskInProgress(tile, name);
+                lock (tile.tasksInProgess)
+                {
+                    tile.tasksInProgess.Add(task);
+                }
+                task.action = action;
+                return () =>
+                {
+                    action();
+
+                    lock (tile.tasksInProgess)
+                    {
+                        tile.tasksInProgess.Remove(task);
+                    }
+                };
+            }
+
+            public static Action<T> Start<T>(Tile tile, Action<T> action, string name)
+            {
+                var task = new TaskInProgress(tile, name);
+                lock (tile.tasksInProgess)
+                {
+                    tile.tasksInProgess.Add(task);
+                }
+                task.action = action;
+                return x =>
+                {
+                    action(x);
+
+                    lock (tile.tasksInProgess)
+                    {
+                        tile.tasksInProgess.Remove(task);
+                    }
+                };
             }
         }
     }

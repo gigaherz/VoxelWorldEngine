@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Security.Cryptography.X509Certificates;
 using System.Threading;
@@ -11,6 +12,7 @@ using VoxelWorldEngine.Objects;
 using VoxelWorldEngine.Rendering;
 using VoxelWorldEngine.Terrain;
 using VoxelWorldEngine.Util;
+using VoxelWorldEngine.Util.Performance;
 using VoxelWorldEngine.Util.Scheduler;
 
 namespace VoxelWorldEngine
@@ -217,8 +219,9 @@ namespace VoxelWorldEngine
             if (frameTimes.Count >= 2 && (now-lastFpsUpdate).TotalSeconds > 0.25)
             {
                 var fps = (frameTimes.Count - 1) / (frameTimes.Last() - frameTimes.Peek()).TotalSeconds;
-                Window.Title = $"FPS: {fps};" +
-                               $" Pending tiles: {Grid.PendingTiles}; Queued tasks: {PriorityScheduler.Instance.QueuedTaskCount};" +
+                Window.Title = $"FPS: {fps}; Tiles In Progress: {Grid.InProgressTiles}; Pending tiles: {Grid.PendingTiles};" + 
+                               $" Queued tasks: {PriorityScheduler.Instance.QueuedTaskCount};" +
+                               $" Scheduled tasks: {Grid.UpdateTaskCount};" +
                                $" Player At: {_playerController.PlayerPosition}; Angles: {_playerController.PlayerOrientation};"+
                                $" Target: {_playerController.PlayerPositionTarget}" +
                                $" Mouse: {MouseDelta}" +
@@ -229,10 +232,13 @@ namespace VoxelWorldEngine
 
         protected override void Draw(GameTime gameTime)
         {
-            var now = DateTime.Now;
-            frameTimes.Enqueue(now);
-            base.Draw(gameTime);
-            StatManager.PerFrame.Reset();
+            using (Profiler.CurrentProfiler.Begin("Rendering"))
+            {
+                var now = DateTime.Now;
+                frameTimes.Enqueue(now);
+                base.Draw(gameTime);
+                StatManager.PerFrame.Reset();
+            }
         }
 
     }

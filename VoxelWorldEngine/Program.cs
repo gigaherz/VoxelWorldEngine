@@ -1,5 +1,6 @@
 using System;
 using System.Diagnostics;
+using System.IO;
 using System.Runtime.InteropServices;
 using System.Threading;
 using VoxelWorldEngine.Util.Performance;
@@ -32,7 +33,31 @@ namespace VoxelWorldEngine
                 }
                 Profiler.CurrentProfiler.Close();
             }
+            lock (fileWriter)
+            {
+                _canWrite = false;
+            }
+            fileWriter.Close();
         }
+
+        private static bool _canWrite = true;
+        private static readonly StreamWriter fileWriter = new StreamWriter(new FileStream($"debug-{DateTime.UtcNow.ToString("yyyyMMdd-HHmmss")}.log", FileMode.Create, FileAccess.Write, FileShare.None));
+
+        internal static void DebugWriteLine(string v)
+        {
+            if (_canWrite)
+            {
+                lock (fileWriter)
+                {
+                    if (_canWrite)
+                    {
+                        fileWriter.WriteLine($"[{DateTime.UtcNow.ToString("yyyyMMdd-HHmmss.ffff")}]: {v}");
+                        fileWriter.Flush();
+                    }
+                }
+            }
+        }
+
 
         public static void EnableDebugOutput()
         {
