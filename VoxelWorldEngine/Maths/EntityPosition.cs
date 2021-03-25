@@ -6,16 +6,16 @@ namespace VoxelWorldEngine.Maths
 {
     public struct EntityPosition
     {
-        public Vector3I BasePosition;
+        public TilePos BasePosition;
         public Vector3 RelativePosition;
 
-        private EntityPosition(Vector3I basePos, Vector3 relativePos)
+        private EntityPosition(TilePos basePos, Vector3 relativePos)
         {
             BasePosition = basePos;
             RelativePosition = relativePos;
         }
 
-        public Vector3I GridPosition => BasePosition * Tile.GridSize + (Vector3I)(RelativePosition / Tile.VoxelSize).Floor();
+        public BlockPos GridPosition => BasePosition.ToBlockPos().Offset((Vector3I)(RelativePosition / Tile.VoxelSize).Floor());
 
         public Vector3 RelativeTo(EntityPosition other)
         {
@@ -24,22 +24,22 @@ namespace VoxelWorldEngine.Maths
 
         private Vector3I GetBaseDifference(EntityPosition other)
         {
-            return (BasePosition - other.BasePosition) * Tile.RealSize;
+            return (BasePosition - other.BasePosition).Vec * Tile.RealSize;
         }
 
-        public static EntityPosition Create(Vector3I basePosition, EntityPosition other)
+        public static EntityPosition Create(TilePos basePosition, EntityPosition other)
         {
             var offset = basePosition - other.BasePosition;
-            var relativePosition = other.RelativePosition - offset * Tile.RealSize;
+            var relativePosition = other.RelativePosition - offset.Vec * Tile.RealSize;
 
             return new EntityPosition(basePosition, relativePosition);
         }
 
-        public static EntityPosition Create(Vector3I basePosition, Vector3 relativePosition)
+        public static EntityPosition Create(TilePos basePosition, Vector3 relativePosition)
         {
             var offset = (Vector3I)(relativePosition / Tile.RealSize).Floor();
 
-            basePosition += offset;
+            basePosition = basePosition.Offset(offset);
             relativePosition -= offset * Tile.RealSize;
 
             return new EntityPosition(basePosition, relativePosition);
@@ -60,13 +60,10 @@ namespace VoxelWorldEngine.Maths
             return Create(a.BasePosition, a.RelativePosition - b);
         }
 
-        public static EntityPosition FromGrid(Vector3I xyz, Vector3 offset = new Vector3())
+        public static EntityPosition FromGrid(BlockPos xyz, Vector3 offset = new Vector3())
         {
-            var roundedPos = xyz - xyz & (Tile.GridSize - 1);
-
-            var basePos = roundedPos / Tile.GridSize;
-            var relativePos = (xyz - roundedPos) * Tile.VoxelSize;
-            return Create(basePos, relativePos);
+            var (basePos, relativePos) = xyz.Split();
+            return Create(basePos, relativePos * Tile.VoxelSize + offset);
         }
     }
 }

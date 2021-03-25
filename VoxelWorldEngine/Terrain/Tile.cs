@@ -23,10 +23,10 @@ namespace VoxelWorldEngine.Terrain
         public readonly int UniqueInstanceId = NextInstanceId++;
 
         // Tile properties
-        private static readonly int RealSizeH = 32;
-        private static readonly int RealSizeV = 32;
-        private static readonly int GridSizeH = 32;
-        private static readonly int GridSizeV = 32;
+        private static readonly int RealSizeH = 64;
+        private static readonly int RealSizeV = 64;
+        private static readonly int GridSizeH = 64;
+        private static readonly int GridSizeV = 64;
         private static readonly float VoxelSizeH = RealSizeH / (float)GridSizeH;
         private static readonly float VoxelSizeV = RealSizeV / (float)GridSizeV;
         public static readonly Vector3I GridSize = new Vector3I(GridSizeH, GridSizeV, GridSizeH);
@@ -35,6 +35,7 @@ namespace VoxelWorldEngine.Terrain
 
         private ushort[] _gridBlock;
         private int[] _heightmap;
+        private int[] _depthmap;
         private readonly CubeTree<ISerializable> _gridExtra = new CubeTree<ISerializable>();
 
         private GenerationStage _previousCompletedPhase = GenerationStage.Unstarted;
@@ -61,8 +62,8 @@ namespace VoxelWorldEngine.Terrain
 
         public TileGraphics Graphics { get; }
 
-        public Vector3I Index { get; }
-        public Vector3I Offset { get; }
+        public TilePos Index { get; }
+        public BlockPos Offset { get; }
 
         public EntityPosition Centroid { get; }
 
@@ -75,13 +76,13 @@ namespace VoxelWorldEngine.Terrain
             return $"{{{Index}: {CompletedPhase}/{GeneratingPhase}/{RequiredPhase}}}";
         }
 
-        public Tile(Grid parent, Vector3I index)
+        public Tile(Grid parent, TilePos index)
             : base(parent.Game)
         {
             Parent = parent;
             Context = parent.GenerationContext;
             Index = index;
-            Offset = index * GridSize;
+            Offset = index.ToBlockPos();
 
             Centroid = EntityPosition.Create(Index, RealSize * 0.5f);
 
@@ -241,23 +242,25 @@ namespace VoxelWorldEngine.Terrain
                     }
                     else
                     {
-                        Parent.ClearInProgress(this);
-                        if (!Parent.Request(Index.Offset(0, 1, 0), GenerationStage.Terrain, "surface generation up", (b, t) =>
+                        var tiles = new HashSet<TilePos>();
+                        for(int xx=-1;xx<=1;xx++)
                         {
-                            LogTileMessage("Tile above loaded.");
-                            if (!Parent.Request(Index.Offset(0, -1, 0), GenerationStage.Terrain, "surface generation down", (b2, t2) =>
+                            for (int yy = -1; yy <= 1; yy++)
                             {
-                                LogTileMessage("Tile below loaded.");
-                                Parent.SetInProgress(this);
-                                RunProcess(GenSurface, PriorityClass.Average, "Processing Surface");
-                            }))
-                            {
-                                LogTileMessage("Waiting for tile below...");
+                                for (int zz = -1; zz <= 1; zz++)
+                                {
+                                    if (xx != 0 || yy != 0 || zz != 0)
+                                        tiles.Add(Index.Offset(xx, yy, zz));
+                                }
                             }
-                        }))
-                        {
-                            LogTileMessage("Waiting for tile above...");
                         }
+                        var multiRequest = new MultiRequest(tiles, GenerationStage.Terrain, "surface generation dependencies", (allImmediate, allTiles) => {
+                            LogTileMessage("Dependencies met. Scheduling surface generation");
+                            Parent.SetInProgress(this);
+                            RunProcess(GenSurface, PriorityClass.Average, "Processing Surface");
+                        });
+                        Parent.ClearInProgress(this);
+                        multiRequest.Start(Parent);
                     }
                     break;
                 case GenerationStage.Completed:
@@ -294,7 +297,7 @@ namespace VoxelWorldEngine.Terrain
             {
                 if (Offset.Y + GridSize.Y >= Context.WorldFloor)
                 {
-                    var densityProvider = new CachingValueProvider3D<double>(Offset, GridSize, new DensityProvider(Context.RawDensityProvider, Context.TopologyProvider));
+                    var densityProvider = new CachingValueProvider3D<double>(Offset.Vec, GridSize, new DensityProvider(Context.RawDensityProvider, Context.TopologyProvider));
 
                     //lock (_gridBlock)
                     {
@@ -307,6 +310,7 @@ namespace VoxelWorldEngine.Terrain
                                 var pxz = Offset.Offset(x, 0, z);
 
                                 var topSolid = -1;
+                                var bottomSolid = GridSizeV;
                                 for (int y = 0; y < GridSizeV; y++)
                                 {
                                     var pxyz = Offset.Offset(x, y, z);
@@ -317,7 +321,7 @@ namespace VoxelWorldEngine.Terrain
                                     if (Offset.Y + y > Context.WorldFloor)
                                     {
                                         // density interpolation
-                                        var density = densityProvider.Get(pxyz);
+                                        var density = densityProvider.Get(pxyz.Vec);
 
                                         if (density < 0.0)
                                         {
@@ -336,6 +340,7 @@ namespace VoxelWorldEngine.Terrain
                                     if (block.PhysicsMaterial.IsSolid)
                                     {
                                         topSolid = Math.Max(topSolid, y);
+                                        bottomSolid = Math.Max(bottomSolid, y);
                                     }
                                     else if (block == Block.Air && y < relativeWaterLevel)
                                     {
@@ -348,6 +353,7 @@ namespace VoxelWorldEngine.Terrain
                                 if (!_isSparse)
                                 {
                                     _heightmap[z * GridSizeH + x] = topSolid;
+                                    _depthmap[z * GridSizeH + x] = bottomSolid;
                                 }
                             }
                         }
@@ -375,7 +381,7 @@ namespace VoxelWorldEngine.Terrain
                 lock (_lock)
                 {
                     int relativeWaterLevel = Context.WaterLevel - Offset.Y;
-                    Vector2I xZ = Offset.XZ;
+                    Vector2I xZ = Offset.Vec.XZ;
                     for (int z = 0; z < GridSizeH; z++)
                     {
                         for (int x = 0; x < GridSizeH; x++)
@@ -389,14 +395,14 @@ namespace VoxelWorldEngine.Terrain
                                 // Found surface!
 
                                 float avgSlope = GetSlopeAt(x, y, z, 10);
-                                if (avgSlope > 2)
+                                if (avgSlope > 1.7)
                                     continue;
                                 //double avgSlope = GetGradientAt(x, y, z);
                                 //if (avgSlope > 0.01)
                                 //    continue;
 
-                                int yCeiling = 128; // GetProbableCeilingPosition(x, y + 1, z, GridSize.Y); // search up to one chunk's height up, for now
-                                bool hasCeiling = (yCeiling - y) < GridSize.Y;
+                                int yCeiling = FindCeilingAbove(x, y + 1, z, 128); // search up to one chunk's height up, for now
+                                bool hasCeiling = (yCeiling - y) < 128;
 
                                 if (GetSurfaceMaterials(above, y, relativeWaterLevel, hasCeiling, out var replaceWith))
                                 {
@@ -425,16 +431,16 @@ namespace VoxelWorldEngine.Terrain
 
         private bool GetSurfaceMaterials(Block above, int y, int relativeWaterLevel, bool hasCeiling, out Block[] replaceWith)
         {
-            if (above.PhysicsMaterial == PhysicsMaterial.Air)
+            // TODO: only perform this replacement in beachy areas!
+            if (y >= (relativeWaterLevel - Context.BeachBottom) && y <= (relativeWaterLevel + Context.BeachTop))
             {
-                replaceWith = new[] { hasCeiling ? Block.Dirt : Block.Grass, Block.Dirt, Block.Dirt, Block.Dirt };
+                replaceWith = new[] { Block.Sand, Block.Sand, Block.Sand, Block.Sandstone };
                 return true;
             }
 
-            // TODO: only perform this replacement in beachy areas!
-            if (y >= relativeWaterLevel - Context.BeachBottom && y <= relativeWaterLevel + Context.BeachTop)
+            if (above.PhysicsMaterial == PhysicsMaterial.Air)
             {
-                replaceWith = new[] { Block.Sand, Block.Sand, Block.Sand, Block.Sandstone };
+                replaceWith = new[] { hasCeiling ? Block.Dirt : Block.Grass, Block.Dirt, Block.Dirt, Block.Dirt };
                 return true;
             }
 
@@ -454,33 +460,25 @@ namespace VoxelWorldEngine.Terrain
             return false;
         }
 
-        public int FindCeilingAbove(int x, int top, int z, int maxscan)
+        public int FindCeilingAbove(int x, int y, int z, int maxscan)
         {
             using (Profiler.CurrentProfiler.Begin("Find Ceiling"))
             {
-                var pos = Offset.Offset(x, top, z);
-                var startY = pos.Y;
-
-                var densityProvider = Context.DensityProvider;
-
-                double density;
-                do
+                var gs = new GridScanner(Parent, Offset.Offset(x, y, z));
+                while(maxscan > 0)
                 {
-                    pos += new Vector3I(0, 1, 0);
-                    density = densityProvider.Get(pos);
+                    if (gs.GetBlock() != Block.Air)
+                        return gs.Y - Offset.Y;
+                    gs.YP();
+                    maxscan--;
                 }
-                while (density < 0 && (pos.Y - startY) < maxscan);
-
-                if ((pos.Y - startY) >= maxscan)
-                    return int.MaxValue;
-
-                return (pos.Y - startY) + top;
+                return gs.Y - Offset.Y;
             }
         }
 
-        private bool IsPosInside(Vector3I pos)
+        private bool IsPosInside(BlockPos pos)
         {
-            var p = pos.Offset(-Offset.X, -Offset.Y, -Offset.Z);
+            var p = pos.Vec - Offset.Vec;
             return p.X >= 0 && p.Y >= 0 && p.Z >= 0 && p.X < GridSize.X && p.Y < GridSize.Y && p.Z < GridSize.Z;
         }
 
@@ -488,14 +486,14 @@ namespace VoxelWorldEngine.Terrain
         {
             using (Profiler.CurrentProfiler.Begin("Calculate Slope"))
             {
-                double top0 = Context.HeightProvider.Get(x, z + 1);
-                double top1 = Context.HeightProvider.Get(x, z - 1);
-                double top2 = Context.HeightProvider.Get(x - 1, z);
-                double top3 = Context.HeightProvider.Get(x + 1, z);
-                double top4 = Context.HeightProvider.Get(x - 1, z + 1);
-                double top5 = Context.HeightProvider.Get(x + 1, z - 1);
-                double top6 = Context.HeightProvider.Get(x + 1, z + 1);
-                double top7 = Context.HeightProvider.Get(x - 1, z - 1);
+                var top0 = FindSurfaceFast(x, z + 1);
+                var top1 = FindSurfaceFast(x, z - 1);
+                var top2 = FindSurfaceFast(x - 1, z);
+                var top3 = FindSurfaceFast(x + 1, z);
+                var top4 = FindSurfaceFast(x - 1, z + 1);
+                var top5 = FindSurfaceFast(x + 1, z - 1);
+                var top6 = FindSurfaceFast(x + 1, z + 1);
+                var top7 = FindSurfaceFast(x - 1, z - 1);
 
                 return (float)((
                     Math.Abs(top0 - top1) +
@@ -508,6 +506,20 @@ namespace VoxelWorldEngine.Terrain
 
         private int FindSurfaceFast(int x, int z)
         {
+            var p = Offset.Offset(x, 0, z);
+            if (!IsPosInside(p))
+            {
+                var (tile, tc) = Parent.GetTileCoords(p);
+                if (tile != null)
+                {
+                    return tile.FindSurfaceFast(tc.X, tc.Z);
+                }
+                else
+                {
+                    return 0;
+                }
+            }
+
             var y = GetSolidTop(x, z);
             if (y == GridSizeV - 1)
             {
@@ -533,7 +545,17 @@ namespace VoxelWorldEngine.Terrain
                 z >= 0 && z < GridSizeH)
                 return GetSolidTop(x, z);
 
-            return Parent.GetSolidTop(new Vector3I(x, y, z) + Offset);
+            return Parent.GetSolidTop(Offset.Offset(x, y, z));
+        }
+
+        public int GetSolidBottomRelative(int x, int y, int z)
+        {
+            if (x >= 0 && x < GridSizeH &&
+                y >= 0 && y < GridSizeH &&
+                z >= 0 && z < GridSizeH)
+                return GetSolidBottom(x, z);
+
+            return Parent.GetSolidBottom(Offset.Offset(x, y, z));
         }
 
         public int GetSolidTop(int x, int z)
@@ -543,6 +565,13 @@ namespace VoxelWorldEngine.Terrain
             return _heightmap[z * GridSizeH + x];
         }
 
+        public int GetSolidBottom(int x, int z)
+        {
+            if (_isSparse)
+                return -1;
+            return _depthmap[z * GridSizeH + x];
+        }
+
         public Block GetBlockRelative(int x, int y, int z, bool load = true)
         {
             if (x >= 0 && x < GridSizeH &&
@@ -550,7 +579,7 @@ namespace VoxelWorldEngine.Terrain
                 z >= 0 && z < GridSizeH)
                 return GetBlock(x, y, z);
 
-            return Parent.GetBlock(new Vector3I(x, y, z) + Offset, load);
+            return Parent.GetBlock(Offset.Offset(x, y, z), load);
         }
 
         public void SetBlockRelative(int x, int y, int z, Block block)
@@ -558,9 +587,9 @@ namespace VoxelWorldEngine.Terrain
             if (x >= 0 && x < GridSizeH &&
                 y >= 0 && y < GridSizeV &&
                 z >= 0 && z < GridSizeH)
-                SetBlock(new Vector3I(x, y, z), block);
+                SetBlock(x, y, z, block);
 
-            Parent.SetBlock(new Vector3I(x, y, z) + Offset, block);
+            Parent.SetBlock(Offset.Offset(x, y, z), block);
         }
 
         public void SetBlockRelativeNoLock(int x, int y, int z, Block block)
@@ -570,7 +599,7 @@ namespace VoxelWorldEngine.Terrain
                 z >= 0 && z < GridSizeH)
                 SetBlockNoLock(x, y, z, block);
 
-            Parent.SetBlock(new Vector3I(x, y, z) + Offset, block);
+            Parent.SetBlock(Offset.Offset(x, y, z), block);
         }
 
         public Block GetBlock(Vector3I xyz)
@@ -632,7 +661,10 @@ namespace VoxelWorldEngine.Terrain
         {
             _gridBlock = new ushort[GridSizeH * GridSizeH * GridSizeV];
             _heightmap = new int[GridSizeH * GridSizeH];
+            _depthmap = new int[GridSizeH * GridSizeH];
             _isSparse = false;
+            for (int i = 0; i < _depthmap.Length; i++)
+                _depthmap[i] = GridSizeV;
         }
 
         //int _solidCheckIndex = 0;
@@ -640,87 +672,77 @@ namespace VoxelWorldEngine.Terrain
         {
             using (Profiler.CurrentProfiler.Begin("Tile Update"))
             {
-
-                using (Profiler.CurrentProfiler.Begin("Tile Update 2"))
+                using (Profiler.CurrentProfiler.Begin("Processing Tasks"))
                 {
-
-                    using (Profiler.CurrentProfiler.Begin("Processing Tasks"))
+                    for (int i = 0; i < _pendingActions.Length && i <= (int)CompletedPhase; i++)
                     {
-                        for (int i = 0; i < _pendingActions.Length && i <= (int)CompletedPhase; i++)
+                        while (_pendingActions[i].TryDequeue(out var action))
                         {
-                            while (_pendingActions[i].TryDequeue(out var action))
-                            {
-                                action();
-                            }
+                            action();
                         }
                     }
-
-                    if (_previousCompletedPhase != CompletedPhase)
-                    {
-                        _previousCompletedPhase = CompletedPhase;
-                        using (Profiler.CurrentProfiler.Begin("Notifying Listeners"))
-                        {
-                            OnCompletedPhaseChange();
-                        }
-                    }
-
-                    /*if (CompletedPhase == GenerationStage.Unstarted && RequiredPhase > GenerationStage.Unstarted && GeneratingPhase == CompletedPhase)
-                    {
-                        ScheduleNextPhase();
-                    }*/
-
-                    if (Parent.saveInitializationPhase <= 0)
-                        return;
-
-                    if (IsDirty && CompletedPhase >= GenerationStage.Surface)
-                    {
-                        using (Profiler.CurrentProfiler.Begin("Graphics Rebuild"))
-                        {
-                            if (Graphics.Rebuild())
-                            {
-                                IsDirty = false;
-                            }
-                        }
-                    }
-
-                    using (Profiler.CurrentProfiler.Begin("Graphics Update"))
-                    {
-                        Graphics.Update(gameTime);
-                    }
-
-                    using (Profiler.CurrentProfiler.Begin("base.Update"))
-                    {
-                        base.Update(gameTime);
-                    }
-
-
-                    //if (_isSparse)
-                    //    _isSolid = false;
-                    //else
-                    //{
-                    //    int plane = _solidCheckIndex++ % GridSizeV;
-
-                    //    bool allSolid = true;
-                    //    for (int z = 0; allSolid & z < GridSizeH; z++)
-                    //    {
-                    //        for (int x = 0; allSolid & x < GridSizeH; x++)
-                    //        {
-                    //            allSolid &= GetBlock(x, plane, z).PhysicsMaterial.IsSolid;
-                    //        }
-                    //    }
-                    //    _isSolidPlane[plane] = allSolid;
-
-                    //    if (_solidCheckIndex % GridSizeV == 0)
-                    //    {
-                    //        allSolid = true;
-                    //        for (int y = 0; allSolid & y < GridSizeH; y++)
-                    //        {
-                    //            allSolid &= _isSolidPlane[y];
-                    //        }
-                    //        _isSolid = allSolid;
-                    //    }
-                    //}
                 }
+
+                if (_previousCompletedPhase != CompletedPhase)
+                {
+                    _previousCompletedPhase = CompletedPhase;
+                    using (Profiler.CurrentProfiler.Begin("Notifying Listeners"))
+                    {
+                        OnCompletedPhaseChange();
+                    }
+                }
+
+                if (Parent.saveInitializationPhase <= 0)
+                    return;
+
+                if (IsDirty && CompletedPhase >= GenerationStage.Surface)
+                {
+                    using (Profiler.CurrentProfiler.Begin("Graphics Rebuild"))
+                    {
+                        if (Graphics.Rebuild())
+                        {
+                            IsDirty = false;
+                        }
+                    }
+                }
+
+                using (Profiler.CurrentProfiler.Begin("Graphics Update"))
+                {
+                    Graphics.Update(gameTime);
+                }
+
+                using (Profiler.CurrentProfiler.Begin("base.Update"))
+                {
+                    base.Update(gameTime);
+                }
+
+
+                //if (_isSparse)
+                //    _isSolid = false;
+                //else
+                //{
+                //    int plane = _solidCheckIndex++ % GridSizeV;
+
+                //    bool allSolid = true;
+                //    for (int z = 0; allSolid & z < GridSizeH; z++)
+                //    {
+                //        for (int x = 0; allSolid & x < GridSizeH; x++)
+                //        {
+                //            allSolid &= GetBlock(x, plane, z).PhysicsMaterial.IsSolid;
+                //        }
+                //    }
+                //    _isSolidPlane[plane] = allSolid;
+
+                //    if (_solidCheckIndex % GridSizeV == 0)
+                //    {
+                //        allSolid = true;
+                //        for (int y = 0; allSolid & y < GridSizeH; y++)
+                //        {
+                //            allSolid &= _isSolidPlane[y];
+                //        }
+                //        _isSolid = allSolid;
+                //    }
+                //}
             }
         }
 
@@ -743,6 +765,11 @@ namespace VoxelWorldEngine.Terrain
                 if (_heightmap != null)
                 {
                     Array.Copy(_heightmap, t._heightmap, _heightmap.Length);
+                }
+
+                if (_depthmap != null)
+                {
+                    Array.Copy(_depthmap, t._depthmap, _depthmap.Length);
                 }
 
                 t._gridExtra = new byte[0][];
@@ -768,6 +795,7 @@ namespace VoxelWorldEngine.Terrain
 
                 Array.Copy(data._gridBlock, _gridBlock, _gridBlock.Length);
                 Array.Copy(data._heightmap, _heightmap, _heightmap.Length);
+                Array.Copy(data._depthmap, _depthmap, _depthmap.Length);
 
                 IsDirty = true;
             }

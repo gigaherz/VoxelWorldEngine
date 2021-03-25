@@ -26,7 +26,7 @@ namespace VoxelWorldEngine.Terrain
         public GenerationContext(GenerationSettings settings)
         {
             Seed = settings.Seed;
-            var PerlinDensity = new Simplex(Seed, ((Vector3D)Tile.VoxelSize) * 0.15);
+            var PerlinDensity = new Simplex(Seed, ((Vector3D)Tile.VoxelSize) * 0.035);
             var PerlinHeight = new Simplex(Seed * 31, ((Vector3D)Tile.VoxelSize) * 0.001 /** 0.0005*/);
             var PerlinRoughness = new Simplex(Seed * 53, ((Vector3D)Tile.VoxelSize) * 0.005);
             //var PerlinSharpness = new Simplex(Seed * 71, 1 / 7.0);
@@ -35,7 +35,7 @@ namespace VoxelWorldEngine.Terrain
             WaterLevel = settings.WaterLevel;
             BeachBottom = settings.BeachBottom;
             BeachTop = settings.BeachTop;
-            HeightProvider = new NoiseValueProvider2D(PerlinHeight, settings.HeightOctaves);
+            HeightProvider = new HeightProvider(new NoiseValueProvider2D(PerlinHeight, settings.HeightOctaves));
             RoughnessProvider = new NoiseValueProvider2D(PerlinRoughness, settings.RoughnessOctaves);
             RawDensityProvider = new NoiseValueProvider3D(PerlinDensity, settings.DensityOctaves);
             TopologyProvider = new TopologyProvider(

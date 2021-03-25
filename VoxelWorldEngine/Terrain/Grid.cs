@@ -77,7 +77,7 @@ namespace VoxelWorldEngine.Terrain
         readonly ConcurrentQueue<Tile> pendingSave = new ConcurrentQueue<Tile>();
 
         bool bootstrap = true;
-        List<Vector3I> tempTiles = new List<Vector3I>();
+        List<TilePos> tempTiles = new List<TilePos>();
         public void SetPlayerPosition(EntityPosition newPosition)
         {
             if (saveInitializationPhase < 1)
@@ -161,12 +161,12 @@ namespace VoxelWorldEngine.Terrain
             }
         }
 
-        public bool GetTileIfExists(Vector3I index, out Tile tile)
+        public bool GetTileIfExists(TilePos index, out Tile tile)
         {
             return _tileManager.GetTileIfExists(index, out tile);
         }
 
-        public bool Request(Vector3I index, GenerationStage stage, string reason, Action<bool, Tile> action
+        public bool Request(TilePos index, GenerationStage stage, string reason, Action<bool, Tile> action
                          /*    ,   [CallerMemberName] string memberName = "",
                                 [CallerFilePath] string sourceFilePath = "",
                                 [CallerLineNumber] int sourceLineNumber = 0*/)
@@ -192,7 +192,7 @@ namespace VoxelWorldEngine.Terrain
             }
         }
 
-        public bool Load(Vector3I index, Action<bool, Tile> action)
+        public bool Load(TilePos index, Action<bool, Tile> action)
         {
             var (existed, tile) = _tileManager.GetOrCreateTile(index);
             if (existed)
@@ -230,114 +230,132 @@ namespace VoxelWorldEngine.Terrain
         }
 
 
-        public Tile GetTileCoords(ref Vector3I xyz)
+        public (Tile, Vector3I) GetTileCoords(BlockPos pos)
         {
-            var oo = xyz & (Tile.GridSize - 1);
-            var pp = xyz - oo;
-
-            var pxyz = pp / Tile.GridSize;
+            var (index, oo) = pos.Split();
 
             Tile tile;
-            if (_tileManager.GetTileIfExists(pxyz, out tile))
+            if (_tileManager.GetTileIfExists(index, out tile))
             {
-                xyz = oo;
-                return tile;
+                return (tile,oo);
             }
 
-            return null;
+            return (null,oo);
         }
 
-        public static Vector3I BlockToTile(Vector3I pos)
+        public (Tile, Vector3I) GetOrCreateTile(BlockPos pos)
         {
-            var oo = pos & (Tile.GridSize - 1);
-            var pp = pos - oo;
-
-            return pp / Tile.GridSize;
+            var (index, oo) = pos.Split();
+            var (_, tile) = _tileManager.GetOrCreateTile(index);
+            return (tile, oo);
         }
 
-        public int GetSolidTop(Vector3I xyz)
+        public Tile GetOrCreateTile(TilePos index)
+        {
+            var (_, tile) = _tileManager.GetOrCreateTile(index);
+            return tile;
+        }
+
+        public int GetSolidTop(BlockPos pos)
         {
             using (Profiler.CurrentProfiler.Begin("Finding Solid Top"))
             {
-                // TODO: Support more than one tile in height!
-
-                var tile = GetTileCoords(ref xyz);
+                var (tile,tc) = GetTileCoords(pos);
                 if (tile != null)
                 {
-                    int top = tile.GetSolidTop(xyz.X, xyz.Z);
+                    int top = tile.GetSolidTop(tc.X, tc.Z);
 
-                    while (top < 0)
+                    if (top >= Tile.GridSize.Y)
                     {
-                        xyz.Y--;
-                        if (!_tileManager.GetTileIfExists(xyz, out tile))
-                            return top;
-
-                        top = tile.GetSolidTop(xyz.X, xyz.Z);
+                        return GetSolidTop(tile.Offset.Offset(tc.X, top, tc.Y));
                     }
-
-                    while (top == (Tile.GridSize.Y - 1))
+                    else if (top < 0)
                     {
-                        xyz.Y++;
-                        if (!_tileManager.GetTileIfExists(xyz, out tile))
-                            return top;
-
-                        top = tile.GetSolidTop(xyz.X, xyz.Z);
+                        return GetSolidTop(tile.Offset.Offset(tc.X, top, tc.Y));
+                    }
+                    else
+                    {
+                        return tile.Offset.Y + top;
                     }
                 }
                 return -1;
             }
         }
 
-        public Block GetBlock(Vector3I xyz, bool load = true)
+        public int GetSolidBottom(BlockPos pos)
         {
-            var tile = GetTileCoords(ref xyz);
-            return tile?.GetBlock(xyz) ?? Block.Air;
+            using (Profiler.CurrentProfiler.Begin("Finding Solid Top"))
+            {
+                var (tile,tc) = GetTileCoords(pos);
+                if (tile != null)
+                {
+                    int bottom = tile.GetSolidBottom(tc.X, tc.Z);
+
+                    if (bottom >= Tile.GridSize.Y)
+                    {
+                        return GetSolidBottom(tile.Offset.Offset(tc.X, bottom, tc.Y));
+                    }
+                    else if (bottom < 0)
+                    {
+                        return GetSolidBottom(tile.Offset.Offset(tc.X, bottom, tc.Y));
+                    }
+                    else
+                    {
+                        return tile.Offset.Y + bottom;
+                    }
+                }
+                return -1;
+            }
         }
 
-        public void SetBlock(Vector3I xyz, Block block)
+        public Block GetBlock(BlockPos pos, bool load = true)
         {
-            var tile = GetTileCoords(ref xyz);
-            tile?.SetBlock(xyz, block);
+            var (tile,tc) = GetTileCoords(pos);
+            return tile?.GetBlock(tc) ?? Block.Air;
+        }
+
+        public void SetBlock(BlockPos pos, Block block)
+        {
+            var (tile, tc) = GetTileCoords(pos);
+            tile?.SetBlock(tc, block);
         }
         
-        public int FindGround(Vector3I xyz)
+        public int FindGround(BlockPos pos)
         {
             int seekLimit = 256;
-            if (GetBlock(xyz).PhysicsMaterial.IsSolid)
+            int y = 0;
+            if (GetBlock(pos).PhysicsMaterial.IsSolid)
             {
-                while (GetBlock(xyz.Offset(0,1,0)).PhysicsMaterial.IsSolid)
-                    xyz.Y++;
+                while (GetBlock(pos.Offset(0, y+1, 0)).PhysicsMaterial.IsSolid)
+                    y++;
             }
             else
             {
-                while (seekLimit-- > 0 && !GetBlock(xyz).PhysicsMaterial.IsSolid)
-                    xyz.Y--;
+                while (seekLimit-- > 0 && !GetBlock(pos.Offset(0, y, 0)).PhysicsMaterial.IsSolid)
+                    y--;
             }
-            return xyz.Y;
+            return pos.Y+y;
         }
 
         internal void FindSpawnPosition()
         {
             using (Profiler.CurrentProfiler.Begin("Finding Spawn Position"))
             {
-                Vector3I xyz;
                 int range = 100;
                 int seekLimit = 256;
+                int x, y, z;
 
                 do
                 {
                     var a = Random.NextDouble() * Math.PI * 2;
-                    xyz = new Vector3I(
-                        (int)(range * Math.Cos(a)),
-                        GenerationContext.WaterLevel,
-                        (int)(range * Math.Sin(a)));
 
-                    var oo = xyz & (Tile.GridSize - 1);
-                    var pp = xyz - oo;
+                    x = (int)(range * Math.Cos(a));
+                    y = GenerationContext.WaterLevel;
+                    z = (int)(range * Math.Sin(a));
 
                     var densityProvider = GenerationContext.DensityProvider;
 
-                    if (densityProvider.Get(xyz.Postincrement(0, 1, 0)) < 0)
+                    if (densityProvider.Get(new Vector3I(x, y++, z)) < 0)
                     {
                         range += 5;
                         // try again
@@ -346,19 +364,19 @@ namespace VoxelWorldEngine.Terrain
 
                     while (seekLimit-- > 0)
                     {
-                        if (densityProvider.Get(xyz.Postincrement(0, 1, 0)) >= 0)
+                        if (densityProvider.Get(new Vector3I(x, y++, z)) >= 0)
                         {
                             continue;
                         }
-                        if (densityProvider.Get(xyz.Postincrement(0, 1, 0)) >= 0)
+                        if (densityProvider.Get(new Vector3I(x, y++, z)) >= 0)
                         {
                             continue;
                         }
-                        if (densityProvider.Get(xyz.Postincrement(0, 1, 0)) >= 0)
+                        if (densityProvider.Get(new Vector3I(x, y++, z)) >= 0)
                         {
                             continue;
                         }
-                        if (densityProvider.Get(xyz.Postincrement(0, 1, 0)) < 0)
+                        if (densityProvider.Get(new Vector3I(x, y++, z)) < 0)
                             break;
                     }
 
@@ -375,7 +393,7 @@ namespace VoxelWorldEngine.Terrain
                     // TODO: Build spawn platform
                 }
 
-                SpawnPosition = EntityPosition.FromGrid(xyz.Offset(0, -3, 0));
+                SpawnPosition = EntityPosition.FromGrid(new BlockPos(x, y-3, z));
             }
         }
 
@@ -418,14 +436,79 @@ namespace VoxelWorldEngine.Terrain
             FindSpawnPosition();
         }
 
+        private List<Tile> tileList = new List<Tile>();
+
+        DateTime previousUpdate = DateTime.Now;
+
         public override void Update(GameTime gameTime)
         {
-            if (saveInitializationPhase < 0)
+            using (Profiler.CurrentProfiler.Begin("StartGeneratingSpawnChunks"))
             {
-                saveInitializationPhase = 0;
-                StartGeneratingSpawnChunks();
+                if (saveInitializationPhase < 0)
+                {
+                    saveInitializationPhase = 0;
+                    StartGeneratingSpawnChunks();
+                }
             }
 
+            var currentUpdate = DateTime.Now;
+            if ((currentUpdate - previousUpdate).TotalSeconds < 0.05)
+                return;
+            previousUpdate = currentUpdate;
+
+            QueuePendingTiles();
+
+            int taskCount = 0;
+
+            using (Profiler.CurrentProfiler.Begin("Updating Tiles"))
+            {
+                tileList.Clear();
+                _tileManager.AccessUnordered(unorderedTiles =>
+                {
+                    tileList.AddRange(unorderedTiles);
+                    foreach (var tile in unorderedTiles)
+                    {
+                        taskCount += tile.UpdateTaskCount;
+                    }
+                });
+
+                foreach (var tile in tileList)
+                {
+                    tile.Update(gameTime);
+                }
+            }
+
+            UpdateTaskCount = taskCount;
+
+            DoSave();
+
+            base.Update(gameTime);
+        }
+
+        private void DoSave()
+        {
+            if (pendingSave.Count > 0 && !_storage.BusyWriting)
+            {
+                PriorityScheduler.Schedule(() =>
+                {
+                    using (Profiler.CurrentProfiler.Begin("Saving Tiles"))
+                    {
+                        lock (pendingSave)
+                        {
+                            List<Tile> tiles = new List<Tile>();
+                            while (pendingSave.TryDequeue(out var d))
+                            {
+                                tiles.Add(d);
+                            }
+                            _storage.WriteTiles(tiles);
+                        }
+                    }
+                }, PriorityClass.Low, 1);
+            }
+        }
+
+        private void QueuePendingTiles()
+        {
             using (Profiler.CurrentProfiler.Begin("Queuing Pending Tiles"))
             {
                 lock (_pendingTilesList)
@@ -438,7 +521,7 @@ namespace VoxelWorldEngine.Terrain
                         }
                     }
 
-                    for (int j=0;j<1 && InProgressTiles < TileInProgressThreshold && _pendingTilesList.Count > 0; j++)
+                    for (int j = 0; j < 1 && InProgressTiles < TileInProgressThreshold && _pendingTilesList.Count > 0; j++)
                     {
                         Tile closestTile = null;
                         GenerationStage closestStage = GenerationStage.Unstarted;
@@ -469,74 +552,6 @@ namespace VoxelWorldEngine.Terrain
                     }
                 }
             }
-
-            int taskCount = 0;
-
-            using (Profiler.CurrentProfiler.Begin("Updating Tiles"))
-            {
-                List<Tile> tileList = new List<Tile>();
-                //List<Tile> tileList2 = new List<Tile>();
-                _tileManager.AccessUnordered(unorderedTiles =>
-                {
-                    foreach (var tile in unorderedTiles)
-                    {
-                        tileList.Add(tile);
-                        //if (tile.UpdateTaskCount > 0) tileList2.Add(tile);
-                        taskCount += tile.UpdateTaskCount;
-                    }
-                });
-
-                /*bool b = false;
-                if (b)
-                {
-                    int tc = 0;
-                    int[] counts = new int[9];
-                    foreach (var tile in tileList2)
-                    {
-                        for(int i=0;i<=8;i++)
-                        {
-                            var list = tile._pendingActions[i];
-                            if (list.Count > 0)
-                            {
-                                counts[i]++;
-                                tc++;
-                            }
-                        }
-                    }
-                    for (int i = 0; i <= 8; i++)
-                    {
-                        Debug.Write($"[{i}] = {counts[i]}; ");
-                    }
-                    Debug.WriteLine("");
-                }*/
-
-                foreach (var tile in tileList)
-                {
-                    tile.Update(gameTime);
-                }
-            }
-
-            UpdateTaskCount = taskCount;
-
-            if (pendingSave.Count > 0 && !_storage.BusyWriting)
-            {
-                PriorityScheduler.Schedule(() => {
-                    using (Profiler.CurrentProfiler.Begin("Saving Tiles"))
-                    {
-                        lock (pendingSave)
-                        {
-                            List<Tile> tiles = new List<Tile>();
-                            while (pendingSave.TryDequeue(out var d))
-                            {
-                                tiles.Add(d);
-                            }
-                            _storage.WriteTiles(tiles);
-                        }
-                    }
-                }, PriorityClass.Low, 1);
-            }
-
-            base.Update(gameTime);
         }
 
         private void StartGeneratingSpawnChunks()

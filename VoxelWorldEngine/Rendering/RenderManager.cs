@@ -90,6 +90,9 @@ namespace VoxelWorldEngine.Rendering
             _ssao.Modify(VoxelGame.Instance.LastKeyboardState);
         }
 
+        bool isDebugEnabled = false;
+        bool isDebugEnabledPressed = false;
+
         bool isSsaoEnabled = false;
         bool isSsaoEnabledPressed = false;
         public override void Draw(GameTime gameTime)
@@ -97,8 +100,13 @@ namespace VoxelWorldEngine.Rendering
             _baseCamera.Forward = CameraForward;
             _baseCamera.ViewFrustum = new BoundingFrustum(_baseCamera.View * _baseCamera.Projection);
 
-            //Draw with SSAO unless F1 is down 
-            var ss = VoxelGame.Instance.LastKeyboardState.IsKeyDown(Keys.F1);
+            //Draw with SSAO unless F2 is down 
+            var db = VoxelGame.Instance.LastKeyboardState.IsKeyDown(Keys.F1);
+            if (!isDebugEnabledPressed && db)
+                isDebugEnabled = !isDebugEnabled;
+            isDebugEnabledPressed = db;
+
+            var ss = VoxelGame.Instance.LastKeyboardState.IsKeyDown(Keys.F2);
             if (!isSsaoEnabledPressed && ss)
                 isSsaoEnabled = !isSsaoEnabled;
             isSsaoEnabledPressed = ss;
@@ -113,7 +121,10 @@ namespace VoxelWorldEngine.Rendering
                 _ssao.Draw(gameTime, _deferredRenderer, _outputRenderTarget, _baseCamera, !VoxelGame.Instance.LastKeyboardState.IsKeyDown(Keys.F2), null);
             }
 
-            Debug();
+            if (isDebugEnabled)
+            {
+                Debug();
+            }
 
             SpriteBatch.Begin();
             if (VoxelGame.Instance.Paused)
@@ -122,7 +133,12 @@ namespace VoxelWorldEngine.Rendering
                 SpriteBatch.DrawString(Font, "Paused",
                     new Vector2(bounds.Width / 2.0f, bounds.Height / 2.0f), Color.White);
             }
-            SpriteBatch.DrawString(Font, $"Draw Calls: {StatManager.PerFrame["DrawCalls"].Value}", new Vector2(5, 500), Color.White);
+
+            if (isDebugEnabled)
+            {
+                SpriteBatch.DrawString(Font, $"Draw Calls: {StatManager.PerFrame["DrawCalls"].Value}", new Vector2(5, 200), Color.White);
+            }
+
             SpriteBatch.End();
         }
 

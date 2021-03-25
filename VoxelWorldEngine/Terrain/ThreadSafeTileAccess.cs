@@ -16,7 +16,7 @@ namespace VoxelWorldEngine.Terrain
         private readonly ReaderWriterLockSlim _tilesLock = new ReaderWriterLockSlim();
 
         private readonly CubeTree<Tile> _tiles = new CubeTree<Tile>();
-        private readonly HashSet<Tile> _unorderedTiles = new HashSet<Tile>();
+        internal readonly HashSet<Tile> _unorderedTiles = new HashSet<Tile>(); // TEMP
 
         public ThreadSafeTileAccess(Grid grid)
         {
@@ -26,7 +26,7 @@ namespace VoxelWorldEngine.Terrain
         /// <summary>
         /// Finds a tile, if exists. MUST BE CALLED WITH THE WRITE LOCK HELD!
         /// </summary>
-        private Tile SetTileUnsafe(Vector3I index, Tile tile)
+        private Tile SetTileUnsafe(TilePos index, Tile tile)
         {
             var previous = _tiles.SetValue(index.X, index.Y, index.Z, tile);
             if (previous != tile)
@@ -47,16 +47,16 @@ namespace VoxelWorldEngine.Terrain
         /// <summary>
         /// Finds a tile, if exists. MUST BE CALLED WITH THE READ LOCK HELD!
         /// </summary>
-        private bool Find(Vector3I pos, out Tile tile)
+        private bool Find(TilePos index, out Tile tile)
         {
 #if DEBUG
             if (!_tilesLock.IsReadLockHeld && !_tilesLock.IsUpgradeableReadLockHeld)
                 throw new Exception("Unsafe call to Find!");
 #endif
-            return _tiles.TryGetValue(pos.X, pos.Y, pos.Z, out tile);
+            return _tiles.TryGetValue(index.X, index.Y, index.Z, out tile);
         }
 
-        public (bool,Tile) GetOrCreateTile(Vector3I index)
+        public (bool,Tile) GetOrCreateTile(TilePos index)
         {
             _tilesLock.EnterUpgradeableReadLock();
             try
@@ -80,7 +80,7 @@ namespace VoxelWorldEngine.Terrain
             }
         }
 
-        public Tile SetTile(Vector3I index, Tile tile)
+        public Tile SetTile(TilePos index, Tile tile)
         {
             _tilesLock.EnterWriteLock();
             try
@@ -93,7 +93,7 @@ namespace VoxelWorldEngine.Terrain
             }
         }
 
-        public bool GetTileIfExists(Vector3I pos, out Tile tile)
+        public bool GetTileIfExists(TilePos pos, out Tile tile)
         {
             _tilesLock.EnterReadLock();
             try
@@ -119,7 +119,7 @@ namespace VoxelWorldEngine.Terrain
             }
         }
 
-        public void RemoveTiles(List<Vector3I> tempTiles)
+        public void RemoveTiles(List<TilePos> tempTiles)
         {
             _tilesLock.EnterWriteLock();
             try

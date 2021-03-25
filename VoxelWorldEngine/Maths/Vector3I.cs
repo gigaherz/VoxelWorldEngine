@@ -91,6 +91,11 @@ namespace VoxelWorldEngine.Maths
                 a.Z - b.Z);
         }
 
+        public static Vector3I operator -(Vector3I a)
+        {
+            return new Vector3I(-a.X, -a.Y, -a.Z);
+        }
+
         public static Vector3I operator *(Vector3I a, Vector3I b)
         {
             return new Vector3I(

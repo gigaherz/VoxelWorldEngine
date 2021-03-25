@@ -23,7 +23,7 @@ namespace VoxelWorldEngine.Util.Providers
         public double GetDensityAt(int x, int y, int z, double roughness, double bottom, double top, double rawDensity)
         {
             var baseDensity = 0.5 - Math.Max(0, Math.Min(1, (y - bottom) / (top - bottom)));
-            var noise = 0.15 * rawDensity;
+            var noise = 0.25 * rawDensity;
             return roughness * noise + baseDensity;
         }
     }

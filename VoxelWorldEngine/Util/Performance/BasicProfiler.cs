@@ -24,9 +24,9 @@ namespace VoxelWorldEngine.Util.Performance
         {
             var node = Nodes.GetOrAdd(nodeName, name => new Node(name));
             var ti = CurrentThreadInfo.Value;
-            ti.Hold();
+            //ti.Hold();
             var frame = ti.PushAndStart((Node)node);
-            ti.Unhold();
+            //ti.Unhold();
             return frame;
         }
 

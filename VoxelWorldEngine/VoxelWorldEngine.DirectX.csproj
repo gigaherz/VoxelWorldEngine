@@ -40,6 +40,7 @@
     <CodeAnalysisRuleSet>MinimumRecommendedRules.ruleset</CodeAnalysisRuleSet>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="Maths\BlockPos.cs" />
     <Compile Include="Noise\Coherent.cs" />
     <Compile Include="Noise\NoiseOctaves.cs" />
     <Compile Include="PlayerController.cs" />
@@ -65,6 +66,8 @@
     <Compile Include="Terrain\Graphics\GridGraphics.cs" />
     <Compile Include="Terrain\Graphics\TileMesh.cs" />
     <Compile Include="Terrain\GenerationContext.cs" />
+    <Compile Include="Terrain\GridScanner.cs" />
+    <Compile Include="Terrain\MultiRequest.cs" />
     <Compile Include="Terrain\ThreadSafeTileAccess.cs" />
     <Compile Include="Util\IInterpolator.cs" />
     <Compile Include="Util\Performance\BasicProfiler.cs" />
@@ -72,6 +75,7 @@
     <Compile Include="Util\Performance\IProfiler.cs" />
     <Compile Include="Util\Performance\IProfilerFrame.cs" />
     <Compile Include="Util\Performance\Profiler.cs" />
+    <Compile Include="Util\Providers\HeightProvider.cs" />
     <Compile Include="Util\Scheduler\PositionedTask.cs" />
     <Compile Include="Util\Scheduler\PriorityClass.cs" />
     <Compile Include="Util\Scheduler\PriorityTaskBase.cs" />

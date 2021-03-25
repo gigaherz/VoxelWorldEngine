@@ -1,5 +1,6 @@
 ﻿using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Input;
+using System;
 using VoxelWorldEngine.Maths;
 using VoxelWorldEngine.Rendering;
 using VoxelWorldEngine.Util.Scheduler;
@@ -36,7 +37,7 @@ namespace VoxelWorldEngine
         {
             base.Update(gameTime);
 
-            var elapsed = (float)gameTime.ElapsedGameTime.TotalSeconds;
+            var elapsed = MathHelper.Min(1.0f/20, (float)gameTime.ElapsedGameTime.TotalSeconds);
 
             Vector3 move = Vector3.Zero;
             bool walkingIsPressed = false;
@@ -87,25 +88,25 @@ namespace VoxelWorldEngine
                     var p0 = (PlayerPosition - new Vector3(0.4f, 0.4F, 0.4F)).GridPosition;
                     var q0 = (PlayerPosition + new Vector3(0.4f, 0.4F, 0.4F)).GridPosition;
 
-                    var xyz = new Vector3I(p0.X, int.MinValue, p0.Z);
+                    var pos = new BlockPos(p0.X, int.MinValue, p0.Z);
 
                     for (int rz = p0.Z; rz <= q0.Z; rz++)
                     {
                         for (int rx = p0.X; rx <= q0.X; rx++)
                         {
-                            int ry = VoxelGame.Instance.Grid.FindGround(new Vector3I(rx, q0.Y, rz));
-                            if (ry > xyz.Y)
+                            int ry = VoxelGame.Instance.Grid.FindGround(new BlockPos(rx, q0.Y, rz));
+                            if (ry > pos.Y)
                             {
-                                xyz = new Vector3I(rx, ry, rz);
+                                pos = new BlockPos(rx, ry, rz);
                             }
                         }
                     }
 
-                    var block = VoxelGame.Instance.Grid.GetBlock(xyz);
+                    var block = VoxelGame.Instance.Grid.GetBlock(pos);
 
                     float blockHeight = block.PhysicsMaterial.IsSolid ? block.PhysicsMaterial.Height : 0;
 
-                    PlayerPositionTarget = EntityPosition.FromGrid(xyz, new Vector3(0, blockHeight, 0));
+                    PlayerPositionTarget = EntityPosition.FromGrid(pos, new Vector3(0, blockHeight, 0));
 
                     var approach = elapsed / 0.25f;
 

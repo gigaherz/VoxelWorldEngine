@@ -38,7 +38,7 @@ namespace VoxelWorldEngine.Util.Providers
 
         public override (double, double, double) Get(int x, int z)
         {
-            var height = HeightCurve(heightSource.Get(x,z));
+            var height = heightSource.Get(x,z);
 
             double roughness = 0;
 #if true
@@ -86,15 +86,6 @@ namespace VoxelWorldEngine.Util.Providers
             var o0 = (int)(y0 * 29);
             var o1 = (int)(y1 * 30) - 5 & o0;
             yOffset = Math.Max(0, o1 - o0);
-        }
-
-        private double HeightCurve(double x)
-        {
-            //0.3*x+0.1*x^3+0.065*sin(x*2*3.141592)
-            //var outp = 0.3 * inp + 0.1 * Math.Pow(inp, 3) + 0.065 * Math.Sin(inp * 2 * Math.PI);
-            x *= 2;
-            var outp = Math.Sign(x) * (Math.Sin(x * x * 4) + 4.5 * x * x) * 7;
-            return outp;
         }
 
         private double SharpnessCurve(double initial)

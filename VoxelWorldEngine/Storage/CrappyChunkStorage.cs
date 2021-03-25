@@ -44,7 +44,7 @@ namespace VoxelWorldEngine.Storage
 
         private Vector3I RegionIndex(Tile tile)
         {
-            return (tile.Index / (float)RegionSize).FloorToInt();
+            return (tile.Index.Vec / (float)RegionSize).FloorToInt();
         }
 
         private void WriteRegionFile(string name, RegionData regionFile)
@@ -315,6 +315,7 @@ namespace VoxelWorldEngine.Storage
                 public int _generationState;
                 public readonly ushort[] _gridBlock = new ushort[Tile.GridSize.X * Tile.GridSize.Y * Tile.GridSize.Z];
                 public readonly int[] _heightmap = new int[Tile.GridSize.X * Tile.GridSize.Z];
+                public readonly int[] _depthmap = new int[Tile.GridSize.X * Tile.GridSize.Z];
                 public byte[][] _gridExtra;
                 public byte[][] _gridEntities;
             }
@@ -330,13 +331,13 @@ namespace VoxelWorldEngine.Storage
 
             public void SetTile(Tile tile)
             {
-                var offset = tile.Index - Region * RegionSize;
+                var offset = tile.Index.Offset(- Region * RegionSize);
                 tiles[(offset.Z * RegionSize + offset.Y) * RegionSize + offset.X] = tile.Serialize();
             }
 
             public bool ReadTile(Tile tile)
             {
-                var offset = tile.Index - Region * RegionSize;
+                var offset = tile.Index.Offset( - Region * RegionSize);
                 var data = tiles[(offset.Z * RegionSize + offset.Y) * RegionSize + offset.X];
                 if (data != null)
                 {
