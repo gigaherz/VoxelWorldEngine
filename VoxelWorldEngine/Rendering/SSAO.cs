@@ -40,8 +40,8 @@ namespace VoxelWorldEngine.Rendering
 
             _randomNormals = content.Load<Texture2D>("RandomNormals");
 
-            SampleRadius = 0.25f;
-            DistanceScale = 0.01f;
+            SampleRadius = 0.85f; // 0.25f;
+            DistanceScale = 0.025f; //3.25f;
 
             VoxelGame.Instance.ResolutionChanged += (sender, args) =>
             {

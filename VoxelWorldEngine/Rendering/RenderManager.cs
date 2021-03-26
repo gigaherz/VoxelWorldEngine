@@ -93,7 +93,7 @@ namespace VoxelWorldEngine.Rendering
         bool isDebugEnabled = false;
         bool isDebugEnabledPressed = false;
 
-        bool isSsaoEnabled = false;
+        bool isSsaoEnabled = true;
         bool isSsaoEnabledPressed = false;
         public override void Draw(GameTime gameTime)
         {
@@ -147,7 +147,7 @@ namespace VoxelWorldEngine.Rendering
             int size = 128, x = 0;
 
             x = _deferredRenderer.Debug(SpriteBatch, x, size);
-            _ssao.Debug(SpriteBatch, Font, x, size);
+            if (isSsaoEnabled) _ssao.Debug(SpriteBatch, Font, x, size);
         }
 
         private IEnumerable<IRenderable> GetDrawables()

@@ -56,7 +56,7 @@ namespace VoxelWorldEngine.Terrain.Graphics
             if (Interlocked.Exchange(ref Busy, 1) != 0)
                 return false;
 
-            Tile.RunProcess(GenMeshes, PriorityClass.High, "Generating Meshes");
+            Tile.RunProcess(GenMeshes, PriorityClass.High, "Generating Meshes", false);
 
             return true;
         }

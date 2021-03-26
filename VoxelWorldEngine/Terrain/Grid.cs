@@ -24,7 +24,7 @@ namespace VoxelWorldEngine.Terrain
         public static int TileInProgressThreshold = 100; //*/ PriorityScheduler.Instance.MaximumConcurrencyLevel * 10;
         public static int LoadRadius = 360;
         public static int UnloadRadius = 600;
-        public static int SpawnChunksRange = 0; // 200 / Tile.GridSize.X;
+        public static int SpawnChunksRange = 200 / Tile.GridSize.X;
 
         public struct PendingContext {
             public readonly GenerationStage stage;
@@ -458,6 +458,14 @@ namespace VoxelWorldEngine.Terrain
 
             QueuePendingTiles();
 
+            if (saveInitializationPhase == 0)
+            {
+                if (_inProgressTilesSet.Count == 0 && _pendingTilesList.Count == 0 && PriorityScheduler.Instance.QueuedTaskCount == 0)
+                {
+                    saveInitializationPhase = 1;
+                }
+            }
+
             int taskCount = 0;
 
             using (Profiler.CurrentProfiler.Begin("Updating Tiles"))
@@ -513,14 +521,6 @@ namespace VoxelWorldEngine.Terrain
             {
                 lock (_pendingTilesList)
                 {
-                    if (saveInitializationPhase == 0)
-                    {
-                        if (_pendingTilesList.Count == 0 && PriorityScheduler.Instance.QueuedTaskCount == 0)
-                        {
-                            saveInitializationPhase = 1;
-                        }
-                    }
-
                     for (int j = 0; j < 1 && InProgressTiles < TileInProgressThreshold && _pendingTilesList.Count > 0; j++)
                     {
                         Tile closestTile = null;
@@ -547,7 +547,7 @@ namespace VoxelWorldEngine.Terrain
                             _pendingTilesList.RemoveAt(closestIndex);
                             _pendingTilesSet.Remove(closestTile);
                             closestTile.SetRequiredPhase(closestStage);
-                            closestTile.ScheduleNextPhase();
+                            closestTile.ScheduleNextPhase(false);
                         }
                     }
                 }

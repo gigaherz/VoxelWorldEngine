@@ -173,11 +173,19 @@ namespace VoxelWorldEngine.Terrain
             }
         }
 
-        public void RunProcess(Action process, PriorityClass priorityClass, string processName)
+        public void RunProcess(Action process, PriorityClass priorityClass, string processName, bool runInThread)
         {
             process = TaskInProgress.Start(this, process, $"RunProcess[{processName}]");
             LogTileMessage($"Starting Process '{processName}'...");
-            PriorityScheduler.Schedule(process, priorityClass, Centroid);
+
+            if (runInThread)
+            {
+                process();
+            }
+            else
+            {
+                PriorityScheduler.Schedule(process, priorityClass, Centroid);
+            }
         }
 
         private volatile int _logCount;
@@ -212,7 +220,7 @@ namespace VoxelWorldEngine.Terrain
             return IsAtPhase(RequiredPhase);
         }
 
-        public bool ScheduleNextPhase()
+        public bool ScheduleNextPhase(bool continueFromPhase)
         {
             if (IsAtPhase(RequiredPhase))
             {
@@ -231,7 +239,7 @@ namespace VoxelWorldEngine.Terrain
             switch (GeneratingPhase)
             {
                 case GenerationStage.Terrain:
-                    RunProcess(GenTerrain, PriorityClass.Average, "Calculating Terrain");
+                    RunProcess(GenTerrain, PriorityClass.Average, "Calculating Terrain", continueFromPhase);
                     break;
                 case GenerationStage.Surface:
                     if (_isSparse)
@@ -257,7 +265,7 @@ namespace VoxelWorldEngine.Terrain
                         var multiRequest = new MultiRequest(tiles, GenerationStage.Terrain, "surface generation dependencies", (allImmediate, allTiles) => {
                             LogTileMessage("Dependencies met. Scheduling surface generation");
                             Parent.SetInProgress(this);
-                            RunProcess(GenSurface, PriorityClass.Average, "Processing Surface");
+                            RunProcess(GenSurface, PriorityClass.Average, "Processing Surface", continueFromPhase && allImmediate);
                         });
                         Parent.ClearInProgress(this);
                         multiRequest.Start(Parent);
@@ -282,7 +290,7 @@ namespace VoxelWorldEngine.Terrain
             LogTileMessage($"Phase {GeneratingPhase} completed on the way to {RequiredPhase}...");
             CompletedPhase = GeneratingPhase;
             ScheduleOnUpdate(OnChanged, "notify neighbours");
-            ScheduleNextPhase();
+            ScheduleNextPhase(true);
         }
 
         void GenTerrain()
