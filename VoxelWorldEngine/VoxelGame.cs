@@ -35,23 +35,22 @@ namespace VoxelWorldEngine
 
         public KeyboardState LastKeyboardState { get; private set; }
 
+        public Vector2I ClientSize => new Vector2I(_clientWidth, _clientHeight);
         public Vector2I MouseDelta { get; set; }
 
         public bool Paused { get; private set; }
+
 
         public VoxelGame()
         {
             Instance = this;
 
+            _clientWidth = 1600;
+            _clientHeight = 960;
             _graphics = new GraphicsDeviceManager(this)
             {
-#if false
-                PreferredBackBufferWidth = 1280,
-                PreferredBackBufferHeight = 720,
-#else
                 PreferredBackBufferWidth = 1600,
                 PreferredBackBufferHeight = 960,
-#endif
                 PreferMultiSampling = false,
                 SynchronizeWithVerticalRetrace = false,
                 GraphicsProfile = GraphicsProfile.HiDef
@@ -59,26 +58,19 @@ namespace VoxelWorldEngine
             _graphics.ApplyChanges();
 
             Window.AllowUserResizing = true;
-            Window.ClientSizeChanged += Window_ClientSizeChanged;
 
             Content.RootDirectory = "Content";
         }
 
-        private bool _resizePending = false;
-        void Window_ClientSizeChanged(object sender, EventArgs e)
-        {
-            _resizePending = true;
-        }
-
         public class ResolutionEventArgs : EventArgs
         {
-            public int BackBufferWidth { get; }
-            public int BackBufferHeight { get; }
+            public int Width { get; }
+            public int Height { get; }
 
-            public ResolutionEventArgs(int backBufferWidth, int backBufferHeight)
+            public ResolutionEventArgs(int width, int height)
             {
-                BackBufferWidth = backBufferWidth;
-                BackBufferHeight = backBufferHeight;
+                Width = width;
+                Height = height;
             }
         }
 
@@ -97,11 +89,9 @@ namespace VoxelWorldEngine
                 if (!MouseExtras.Instance.HasCapture(this, Window))
                     MouseExtras.Instance.SetCapture(Window);
 
-                var centerX = Window.ClientBounds.Width / 2;
-                var centerY = Window.ClientBounds.Height / 2;
+                var centerX = _clientWidth / 2;
+                var centerY = _clientHeight / 2;
                 MouseExtras.Instance.SetPosition(Window, centerX, centerY);
-
-                
             }
             
             Components.Add(Grid = new Grid(this));
@@ -129,21 +119,26 @@ namespace VoxelWorldEngine
             MouseExtras.Instance.ReleaseCapture();
             PriorityScheduler.Instance.Dispose();
         }
-        
+
+        private int _clientWidth;
+        private int _clientHeight;
+
         protected override void Update(GameTime gameTime)
         {
             if (Window == null)
                 return;
 
-            if(_resizePending)
+            if (Window.ClientBounds.Width != _clientWidth || Window.ClientBounds.Height != _clientHeight)
             {
-                _graphics.PreferredBackBufferWidth = Window.ClientBounds.Width;
-                _graphics.PreferredBackBufferHeight = Window.ClientBounds.Height;
+                _clientWidth = Window.ClientBounds.Width;
+                _clientHeight = Window.ClientBounds.Height;
+                _graphics.PreferredBackBufferWidth = _clientWidth;
+                _graphics.PreferredBackBufferHeight = _clientHeight;
                 _graphics.ApplyChanges();
 
                 var p = GraphicsDevice.PresentationParameters;
                 OnResolutionChanged(new ResolutionEventArgs(p.BackBufferWidth, p.BackBufferHeight));
-                _resizePending = false;
+
             }
 
             ShowFps(gameTime);
@@ -179,8 +174,8 @@ namespace VoxelWorldEngine
                 var mouseY = 0;
                 if (!Paused && MouseExtras.Instance.HasCapture(this, Window))
                 {
-                    var centerX = Window.ClientBounds.Width / 2;
-                    var centerY = Window.ClientBounds.Height / 2;
+                    var centerX = _clientWidth / 2;
+                    var centerY = _clientHeight / 2;
                     var mouse = MouseExtras.Instance.GetPosition(Window);
                     mouseX = mouse.X - centerX;
                     mouseY = mouse.Y - centerY;
@@ -202,8 +197,8 @@ namespace VoxelWorldEngine
                 if (!MouseExtras.Instance.HasCapture(this, Window))
                     MouseExtras.Instance.SetCapture(Window);
 
-                var centerX = Window.ClientBounds.Width / 2;
-                var centerY = Window.ClientBounds.Height / 2;
+                var centerX = _clientWidth / 2;
+                var centerY = _clientHeight / 2;
                 MouseExtras.Instance.SetPosition(Window, centerX, centerY);
             }
         }

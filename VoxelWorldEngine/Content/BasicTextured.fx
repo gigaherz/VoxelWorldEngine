@@ -4,6 +4,7 @@ float4x4 World;
 float4x4 View;
 float4x4 Projection;
 float3x3 WorldViewIT;
+float2   BufferTextureSize;
 
 Texture Texture0;
 sampler sampler0 = sampler_state {
@@ -29,15 +30,15 @@ struct VS_out
     float2 TexCoord0 : TEXCOORD0;
     float3 Normal    : TEXCOORD1;
     float4 Color     : TEXCOORD2;
-    float3 Depth     : TEXCOORD3;
+    float4 ViewPosition : TEXCOORD3;
 };
 
 struct PS_out
 {
-    float4 Color  : COLOR0;
-    float4 Normal : COLOR1;
-    float4 Depth  : COLOR2;
-    float4 Albedo : COLOR3;
+    float4 Color    : COLOR0;
+    float4 Normal   : COLOR1;
+    float4 Position : COLOR2;
+    float4 Albedo   : COLOR3;
 };
 
 #ifndef DISABLE_NOISE
@@ -87,9 +88,7 @@ VS_out VS_main(VS_in input)
 #endif
     output.TexCoord0 = input.TexCoord0;
 
-    output.Depth.x = output.Position.z;
-    output.Depth.y = output.Position.w;
-    output.Depth.z = viewPosition.z;
+    output.ViewPosition = viewPosition;
 
     return output;
 }
@@ -102,14 +101,17 @@ PS_out PS_main(VS_out input)
 
     output.Color = color;
     output.Normal = float4(encode(input.Normal), 1);
-    output.Depth = input.Depth.x / input.Depth.y;
-    output.Depth.g = input.Depth.z;
+    //output.Depth = input.Depth.x / input.Depth.y;
+    //output.Depth.g = input.Depth.z;
 
     float brightness = (color.r * 4 + color.g * 7 + color.b * 5) / 16.0;
     float opacity = 1; // do not process light transparency yet.
     float shininess = 0;
 
     output.Albedo = float4(brightness, opacity, shininess, 1);
+
+    output.Position = input.ViewPosition / input.ViewPosition.w;
+    //output.Position.xy /= BufferTextureSize;
 
     return output;
 }

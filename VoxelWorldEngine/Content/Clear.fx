@@ -23,7 +23,7 @@ PSO PS()
     output.Color = float4(ClearColor.rgb, 0);
     output.Normals.xyz = 0.5f;
     output.Normals.w = 0.0f;
-    output.Depth = 1.0f;
+    output.Depth = float4(0,0,0,1);
     return output;
 } 
 

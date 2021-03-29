@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Content;
 using Microsoft.Xna.Framework.Graphics;
@@ -17,11 +18,13 @@ namespace VoxelWorldEngine.Rendering
         private RenderTarget2D _ssaoTarget;
         private RenderTarget2D _blurTarget;
 
+        public Vector3[] _sampleSphere;
+
         private readonly FullscreenQuad _fsq;
 
         private float SampleRadius { get; set; }
-        private float DistanceScale { get; set; }
-        
+        private float Bias { get; set; }
+
         public SSAO(Game game, ContentManager content, int width, int height)
             : base(game)
         {
@@ -34,18 +37,32 @@ namespace VoxelWorldEngine.Rendering
             _composer = content.Load<Effect>("SSAOFinal");
             _composer.CurrentTechnique = _composer.Techniques[0];
 
-            CreateRenderTargets(width, height);
-
             _fsq = new FullscreenQuad(game);
 
             _randomNormals = content.Load<Texture2D>("RandomNormals");
 
-            SampleRadius = 0.85f; // 0.25f;
-            DistanceScale = 0.025f; //3.25f;
+            SampleRadius = 0.5f; // 0.25f;
+            Bias = 0.025f; //3.25f;
 
+            Random rnd = new Random();
+            List<Vector3> ssaoKernel = new List<Vector3>();
+            for (int i = 0; i < 64; ++i)
+            {
+                var sample = new Vector3(
+                    (float)(rnd.NextDouble() * 2.0 - 1.0), // -1 .. 1
+                    (float)rnd.NextDouble(),                // 0 .. 1
+                    (float)(rnd.NextDouble() * 2.0 - 1.0) // -1 .. 1
+                );
+                sample.Normalize();
+                sample *= (float)rnd.NextDouble();
+                ssaoKernel.Add(sample);
+            }
+            _sampleSphere = ssaoKernel.ToArray();
+
+            CreateRenderTargets(width, height);
             VoxelGame.Instance.ResolutionChanged += (sender, args) =>
             {
-                CreateRenderTargets(args.BackBufferWidth, args.BackBufferHeight);
+                CreateRenderTargets(args.Width, args.Height);
             };
         }
 
@@ -78,12 +95,13 @@ namespace VoxelWorldEngine.Rendering
             var cornerFrustum = new Vector3(-farFov * ar, farFov, farz);
 
             _ssao.Parameters["NormalBuffer"]?.SetValue(deferred.Normals);
-            _ssao.Parameters["DepthBuffer"]?.SetValue(deferred.Depth);
+            _ssao.Parameters["DepthBuffer"]?.SetValue(deferred.Position);
             _ssao.Parameters["RandNormal"]?.SetValue(_randomNormals);
             _ssao.Parameters["Projection"]?.SetValue(camera.Projection);
             _ssao.Parameters["cornerFustrum"]?.SetValue(cornerFrustum);
             _ssao.Parameters["sampleRadius"]?.SetValue(SampleRadius);
-            _ssao.Parameters["distanceScale"]?.SetValue(DistanceScale);
+            _ssao.Parameters["sampleSphere"]?.SetValue(_sampleSphere);
+            _ssao.Parameters["bias"]?.SetValue(Bias);
             _ssao.Parameters["BufferTextureSize"]?.SetValue(new Vector2(_ssaoTarget.Width, _ssaoTarget.Height));
             _ssao.CurrentTechnique.Passes[0].Apply();
 
@@ -99,7 +117,7 @@ namespace VoxelWorldEngine.Rendering
             GraphicsDevice.Clear(Color.TransparentBlack);
 
             _ssaoBlur.Parameters["NormalBuffer"]?.SetValue(deferred.Normals);
-            _ssaoBlur.Parameters["DepthBuffer"]?.SetValue(deferred.Depth);
+            _ssaoBlur.Parameters["DepthBuffer"]?.SetValue(deferred.Position);
             _ssaoBlur.Parameters["SSAO"]?.SetValue(_ssaoTarget);
             _ssaoBlur.Parameters["BlurDirection"]?.SetValue(new Vector2(0,1));
             _ssaoBlur.Parameters["TargetSize"]?.SetValue(new Vector2(_ssaoTarget.Width, _ssaoTarget.Height));
@@ -128,8 +146,8 @@ namespace VoxelWorldEngine.Rendering
             var speed = 0.01f;
             if (current.IsKeyDown(Keys.Z)) SampleRadius -= speed;
             if (current.IsKeyDown(Keys.X)) SampleRadius += speed;
-            if (current.IsKeyDown(Keys.C)) DistanceScale -= speed;
-            if (current.IsKeyDown(Keys.V)) DistanceScale += speed;
+            if (current.IsKeyDown(Keys.C)) Bias -= speed;
+            if (current.IsKeyDown(Keys.V)) Bias += speed;
         }
 
         public int Debug(SpriteBatch spriteBatch, SpriteFont spriteFont, int x, int size)
@@ -145,8 +163,8 @@ namespace VoxelWorldEngine.Rendering
 
             spriteBatch.Begin(SpriteSortMode.Immediate, BlendState.AlphaBlend);
 
-            spriteBatch.DrawString(spriteFont, "Sample Radius: " + SampleRadius, new Vector2(0, size + 10), Color.Red);
-            spriteBatch.DrawString(spriteFont, "Distance Scale: " + DistanceScale, new Vector2(0, size + 30), Color.Blue);
+            spriteBatch.DrawString(spriteFont, "Radius: " + SampleRadius, new Vector2(0, size + 10), Color.Red);
+            spriteBatch.DrawString(spriteFont, "Bias: " + Bias, new Vector2(0, size + 30), Color.Blue);
 
             spriteBatch.End();
 

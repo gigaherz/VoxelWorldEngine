@@ -10,13 +10,31 @@ namespace VoxelWorldEngine.Util.Scheduler
 {
     public partial class PriorityScheduler : IDisposable
     {
+        public static int CpuCoreCount { get; private set; }
+        static PriorityScheduler() {            
+            int coreCount = 0;
+            foreach (var item in new System.Management.ManagementObjectSearcher("Select NumberOfCores from Win32_Processor").Get())
+            {
+                if (item["NumberOfCores"] is uint u)
+                {
+                    coreCount += (int)u;
+                }
+                else if (item["NumberOfCores"] is int i)
+                {
+                    coreCount += i;
+                }
+            }
+
+            CpuCoreCount = coreCount > 0 ? coreCount : Environment.ProcessorCount;
+        }
+
         public static PriorityScheduler Instance = new PriorityScheduler();
 
         private readonly List<PriorityTaskBase>[] _tasks;
         private readonly AutoResetEvent _awaitTasks = new AutoResetEvent(false);
 
         private Thread[] _threads;
-        public int MaximumConcurrencyLevel { get; set; } = 2 * Math.Max(1, Environment.ProcessorCount - 1);
+        public int MaximumConcurrencyLevel { get; set; } = 2 * Math.Max(1, CpuCoreCount);
         public int QueuedTaskCount => _tasks.Sum(t => t.Count);
 
         EntityPosition _lastPlayerPosition;

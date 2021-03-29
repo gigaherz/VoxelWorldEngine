@@ -4,6 +4,7 @@ using System.Linq;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using Microsoft.Xna.Framework.Input;
+using VoxelWorldEngine.Terrain.Graphics;
 using VoxelWorldEngine.Util;
 
 namespace VoxelWorldEngine.Rendering
@@ -17,6 +18,7 @@ namespace VoxelWorldEngine.Rendering
         private BaseCamera _baseCamera;
         private LightManager _lightManager;
         private DeferredRenderer _deferredRenderer;
+        private GridGraphics _gridGraphics;
 
         public Effect TerrainDrawEffect { get; private set; }
         public Texture TerrainTexture { get; private set; }
@@ -58,21 +60,20 @@ namespace VoxelWorldEngine.Rendering
 
             Font = Game.Content.Load<SpriteFont>("Font");
 
-            var parameters = GraphicsDevice.PresentationParameters;
-            _deferredRenderer = new DeferredRenderer(Game, Game.Content, parameters.BackBufferWidth, parameters.BackBufferHeight);
+            var parameters = VoxelGame.Instance.ClientSize;
+            _deferredRenderer = new DeferredRenderer(Game, Game.Content, parameters.X, parameters.Y);
             _lightManager = new LightManager(Game.Content);
             _lightManager.AddLight(new DirectionalLight(new Vector3(1f, -3f, 1f), Color.White, 0.9f));
             _lightManager.AddLight(new DirectionalLight(new Vector3(-2f, -1f, -1f), new Color(1.0f, 1.0f, 0.5f), 0.5f));
             _lightManager.AddLight(new DirectionalLight(new Vector3(2f, -1f, -1f), new Color(0.5f, 1.0f, 1.0f), 0.3f));
-            _ssao = new SSAO(Game, Game.Content, parameters.BackBufferWidth, parameters.BackBufferHeight);
-
-            CreateRenderTargets(parameters.BackBufferWidth, parameters.BackBufferHeight);
+            _ssao = new SSAO(Game, Game.Content, parameters.X, parameters.Y);
 
             CurrentEffect = TerrainDrawEffect;
 
+            CreateRenderTargets(parameters.X, parameters.Y);
             VoxelGame.Instance.ResolutionChanged += (sender, args) =>
             {
-                CreateRenderTargets(parameters.BackBufferWidth, parameters.BackBufferHeight);
+                CreateRenderTargets(args.Width, args.Height);
             };
         }
 
@@ -129,9 +130,9 @@ namespace VoxelWorldEngine.Rendering
             SpriteBatch.Begin();
             if (VoxelGame.Instance.Paused)
             {
-                var bounds = Game.Window.ClientBounds;
+                var bounds = VoxelGame.Instance.ClientSize;
                 SpriteBatch.DrawString(Font, "Paused",
-                    new Vector2(bounds.Width / 2.0f, bounds.Height / 2.0f), Color.White);
+                    new Vector2(bounds.X / 2.0f, bounds.Y / 2.0f), Color.White);
             }
 
             if (isDebugEnabled)

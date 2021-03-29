@@ -38,7 +38,6 @@ namespace VoxelWorldEngine.Terrain
         private int[] _depthmap;
         private readonly CubeTree<ISerializable> _gridExtra = new CubeTree<ISerializable>();
 
-        private GenerationStage _previousCompletedPhase = GenerationStage.Unstarted;
         private bool _isSparse = true;
 
         private bool _isSolid = false;
@@ -246,7 +245,7 @@ namespace VoxelWorldEngine.Terrain
                     {
                         // We don't need to generate surfaces in a sparse tile, so don't queue any task at all!
                         LogTileMessage($"Skipping Surface Generation, Tile is Sparse...");
-                        PhaseCompleted();
+                        CompleteCurrentPhase();
                     }
                     else
                     {
@@ -278,19 +277,23 @@ namespace VoxelWorldEngine.Terrain
                     break;
                 // TODO: Remaining stages.
                 default:
-                    PhaseCompleted();
+                    CompleteCurrentPhase();
                     break;
             }
 
             return false;
         }
 
-        private void PhaseCompleted()
+        private void CompleteCurrentPhase()
         {
-            LogTileMessage($"Phase {GeneratingPhase} completed on the way to {RequiredPhase}...");
-            CompletedPhase = GeneratingPhase;
-            ScheduleOnUpdate(OnChanged, "notify neighbours");
-            ScheduleNextPhase(true);
+            using (Profiler.CurrentProfiler.Begin("CompleteCurrentPhase"))
+            {
+                LogTileMessage($"Phase {GeneratingPhase} completed on the way to {RequiredPhase}...");
+                CompletedPhase = GeneratingPhase;
+                ScheduleOnUpdate(OnChanged, "notify neighbours");
+                ScheduleNextPhase(true);
+                OnCompletedPhaseChange();
+            }
         }
 
         void GenTerrain()
@@ -371,7 +374,7 @@ namespace VoxelWorldEngine.Terrain
 
             }
 
-            PhaseCompleted();
+            CompleteCurrentPhase();
         }
 
         private readonly float rsqr2 = 1.0f / (float)Math.Sqrt(2);
@@ -434,7 +437,7 @@ namespace VoxelWorldEngine.Terrain
                 }
             }
 
-            PhaseCompleted();
+            CompleteCurrentPhase();
         }
 
         private bool GetSurfaceMaterials(Block above, int y, int relativeWaterLevel, bool hasCeiling, out Block[] replaceWith)
@@ -688,15 +691,6 @@ namespace VoxelWorldEngine.Terrain
                         {
                             action();
                         }
-                    }
-                }
-
-                if (_previousCompletedPhase != CompletedPhase)
-                {
-                    _previousCompletedPhase = CompletedPhase;
-                    using (Profiler.CurrentProfiler.Begin("Notifying Listeners"))
-                    {
-                        OnCompletedPhaseChange();
                     }
                 }
 

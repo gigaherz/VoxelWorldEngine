@@ -51,8 +51,8 @@ namespace VoxelWorldEngine.Terrain
         public Random Random { get; }
 
         public GenerationContext GenerationContext { get; } = new GenerationContext(
-            //new GenerationSettings("VoxelGame".GetHashCode())
-            new GenerationSettings((int)(DateTime.UtcNow.Ticks % 2147483647))
+            new GenerationSettings("SSAO".GetHashCode())
+            //new GenerationSettings((int)(DateTime.UtcNow.Ticks % 2147483647))
             );
 
         private CrappyChunkStorage _storage;
