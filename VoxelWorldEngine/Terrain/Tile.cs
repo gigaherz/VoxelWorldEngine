@@ -238,7 +238,15 @@ namespace VoxelWorldEngine.Terrain
             switch (GeneratingPhase)
             {
                 case GenerationStage.Terrain:
-                    RunProcess(GenTerrain, PriorityClass.Average, "Calculating Terrain", continueFromPhase);
+                    if (Context.WorldFloor > (Offset.Y + VoxelSizeV) || Context.WorldCeiling < Offset.Y)
+                    {
+                        LogTileMessage($"Skipping Terrain Generation, Tile is outside world range...");
+                        CompleteCurrentPhase();
+                    }
+                    else
+                    {
+                        RunProcess(GenTerrain, PriorityClass.Average, "Calculating Terrain", continueFromPhase);
+                    }
                     break;
                 case GenerationStage.Surface:
                     if (_isSparse)
@@ -250,11 +258,11 @@ namespace VoxelWorldEngine.Terrain
                     else
                     {
                         var tiles = new HashSet<TilePos>();
-                        for(int xx=-1;xx<=1;xx++)
+                        int xx = 0;//for(int xx=-1;xx<=1;xx++)
                         {
                             for (int yy = -1; yy <= 1; yy++)
                             {
-                                for (int zz = -1; zz <= 1; zz++)
+                                int zz = 0;//for (int zz = -1; zz <= 1; zz++)
                                 {
                                     if (xx != 0 || yy != 0 || zz != 0)
                                         tiles.Add(Index.Offset(xx, yy, zz));
@@ -405,9 +413,9 @@ namespace VoxelWorldEngine.Terrain
                             {
                                 // Found surface!
 
-                                float avgSlope = GetSlopeAt(x, y, z, 10);
-                                if (avgSlope > 1.7)
-                                    continue;
+                                //float avgSlope = GetSlopeAt(x, y, z, 10);
+                                //if (avgSlope > 1.7) continue;
+                                
                                 //double avgSlope = GetGradientAt(x, y, z);
                                 //if (avgSlope > 0.01)
                                 //    continue;

@@ -95,7 +95,7 @@ namespace VoxelWorldEngine.Rendering
             var cornerFrustum = new Vector3(-farFov * ar, farFov, farz);
 
             _ssao.Parameters["NormalBuffer"]?.SetValue(deferred.Normals);
-            _ssao.Parameters["DepthBuffer"]?.SetValue(deferred.Position);
+            _ssao.Parameters["DepthBuffer"]?.SetValue(deferred.Depth);
             _ssao.Parameters["RandNormal"]?.SetValue(_randomNormals);
             _ssao.Parameters["Projection"]?.SetValue(camera.Projection);
             _ssao.Parameters["cornerFustrum"]?.SetValue(cornerFrustum);
@@ -117,7 +117,7 @@ namespace VoxelWorldEngine.Rendering
             GraphicsDevice.Clear(Color.TransparentBlack);
 
             _ssaoBlur.Parameters["NormalBuffer"]?.SetValue(deferred.Normals);
-            _ssaoBlur.Parameters["DepthBuffer"]?.SetValue(deferred.Position);
+            _ssaoBlur.Parameters["DepthBuffer"]?.SetValue(deferred.Depth);
             _ssaoBlur.Parameters["SSAO"]?.SetValue(_ssaoTarget);
             _ssaoBlur.Parameters["BlurDirection"]?.SetValue(new Vector2(0,1));
             _ssaoBlur.Parameters["TargetSize"]?.SetValue(new Vector2(_ssaoTarget.Width, _ssaoTarget.Height));

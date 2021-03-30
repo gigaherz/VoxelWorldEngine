@@ -23,7 +23,7 @@ namespace VoxelWorldEngine.Rendering
         public RenderTarget2D Colors { get; private set; }
         public RenderTarget2D Albedo { get; private set; }
         public RenderTarget2D Normals { get; private set; }
-        public RenderTarget2D Position { get; private set; }
+        public RenderTarget2D Depth { get; private set; }
 
         public Color ClearColor { get; set; } = new Color(Color.CornflowerBlue, 0);
 
@@ -72,7 +72,7 @@ namespace VoxelWorldEngine.Rendering
             Colors?.Dispose();
             Albedo?.Dispose();
             Normals?.Dispose();
-            Position?.Dispose();
+            Depth?.Dispose();
 
 #if OPENGL
             Colors = new RenderTarget2D(GraphicsDevice, width, height, false, SurfaceFormat.HalfVector4, DepthFormat.Depth24Stencil8);
@@ -83,13 +83,13 @@ namespace VoxelWorldEngine.Rendering
             Colors = new RenderTarget2D(GraphicsDevice, width, height, false, SurfaceFormat.Rgba64, DepthFormat.Depth24Stencil8);
             Albedo = new RenderTarget2D(GraphicsDevice, width, height, false, SurfaceFormat.Rgba64, DepthFormat.Depth24Stencil8);
             Normals = new RenderTarget2D(GraphicsDevice, width, height, false, SurfaceFormat.Rgba64, DepthFormat.Depth24Stencil8);
-            Position = new RenderTarget2D(GraphicsDevice, width, height, false, SurfaceFormat.Vector4, DepthFormat.Depth24Stencil8);
+            Depth = new RenderTarget2D(GraphicsDevice, width, height, false, SurfaceFormat.Vector2, DepthFormat.Depth24Stencil8);
 #endif
             _bufferTextureSize = new Vector2(width, height);
             _gBufferTargets = new[] {
                 new RenderTargetBinding(Colors),
                 new RenderTargetBinding(Normals),
-                new RenderTargetBinding(Position),
+                new RenderTargetBinding(Depth),
                 new RenderTargetBinding(Albedo)
             };
 
@@ -142,7 +142,7 @@ namespace VoxelWorldEngine.Rendering
 
             _directionalLight.Parameters["ColorBuffer"]?.SetValue(Colors);
             _directionalLight.Parameters["NormalBuffer"]?.SetValue(Normals);
-            _directionalLight.Parameters["DepthBuffer"]?.SetValue(Position);
+            _directionalLight.Parameters["DepthBuffer"]?.SetValue(Depth);
             _directionalLight.Parameters["AlbedoBuffer"]?.SetValue(Albedo);
 
             var inverseView = Matrix.Invert(camera.View);
@@ -195,7 +195,7 @@ namespace VoxelWorldEngine.Rendering
             rect.X += size;
             spriteBatch.Draw(Normals, rect, Color.White);
             rect.X += size;
-            spriteBatch.Draw(Position, rect, Color.White);
+            spriteBatch.Draw(Depth, rect, Color.White);
             rect.X += size;
             spriteBatch.Draw(_lightMap, rect, Color.White);
 

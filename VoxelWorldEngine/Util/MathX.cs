@@ -11,7 +11,9 @@ namespace VoxelWorldEngine.Util
     {
         public static double Clamp(double v, double min, double max)
         {
-            return Math.Max(min, Math.Min(max, v));
+            if (v > max) v = max;
+            if (v < min) v = min;
+            return v;
         }
 
         public static double S(double x)
@@ -23,7 +25,8 @@ namespace VoxelWorldEngine.Util
         public static int FastFloor(double x)
         {
             int xi = (int)x;
-            return x < xi ? xi - 1 : xi;
+            if (x < xi) xi -= 1;
+            return xi;
         }
 
         public static float Lerp(float a, float b, float t)
@@ -31,9 +34,51 @@ namespace VoxelWorldEngine.Util
             return a + t * (b - a);
         }
 
+        public static float Lerp(float v00, float v01, float v10, float v11, float tx, float ty)
+        {
+            return Lerp(
+                    Lerp(v00, v01, tx),
+                    Lerp(v10, v11, tx),
+                    ty
+                );
+        }
+
+        public static float Lerp(
+            float v000, float v001, float v010, float v011,
+            float v100, float v101, float v110, float v111,
+            float tx, float ty, float tz)
+        {
+            return Lerp(
+                    Lerp(v000, v001, v010, v011, tx, ty),
+                    Lerp(v100, v101, v110, v111, tx, ty),
+                    tz
+                );
+        }
+
         public static double Lerp(double a, double b, double t)
         {
             return a + t * (b - a);
+        }
+
+        public static double Lerp(double v00, double v01, double v10, double v11, double tx, double ty)
+        {
+            return Lerp(
+                    Lerp(v00, v01, tx),
+                    Lerp(v10, v11, tx),
+                    ty
+                );
+        }
+
+        public static double Lerp(
+            double v000, double v001, double v010, double v011,
+            double v100, double v101, double v110, double v111,
+            double tx, double ty, double tz)
+        {
+            return Lerp(
+                    Lerp(v000, v001, v010, v011, tx, ty),
+                    Lerp(v100, v101, v110, v111, tx, ty),
+                    tz
+                );
         }
 
         public static double Lerp3D(int z, int x, int y, double[] rawDensity, int dim0, int dim1, double rdgd, double gz1, double gy1)

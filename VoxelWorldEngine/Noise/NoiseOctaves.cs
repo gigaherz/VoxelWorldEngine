@@ -6,7 +6,7 @@ namespace VoxelWorldEngine.Noise
 {
     public abstract class NoiseOctaves
     {
-        public struct Grad3
+        protected struct Grad3
         {
             internal double x, y, z;
 
@@ -18,14 +18,14 @@ namespace VoxelWorldEngine.Noise
             }
         }
 
-        public static readonly Grad3[] Gradients = {new Grad3(1,1,0),new Grad3(-1,1,0),new Grad3(1,-1,0),new Grad3(-1,-1,0),
+        protected static readonly Grad3[] Gradients = {new Grad3(1,1,0),new Grad3(-1,1,0),new Grad3(1,-1,0),new Grad3(-1,-1,0),
             new Grad3(1,0,1),new Grad3(-1,0,1),new Grad3(1,0,-1),new Grad3(-1,0,-1),
             new Grad3(0,1,1),new Grad3(0,-1,1),new Grad3(0,1,-1),new Grad3(0,-1,-1)};
 
         // To remove the need for index wrapping, double the permutation table length
-        public static readonly int[] Perm = new int[512];
+        protected static readonly int[] Perm = new int[512];
 
-        public static readonly int[] PermMod12 = new int[512];
+        protected static readonly int[] PermMod12 = new int[512];
 
         static NoiseOctaves()
         {

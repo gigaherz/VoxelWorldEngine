@@ -66,18 +66,22 @@ VSO VS(VSI input)
 
 float4 PS(VSO input) : COLOR0
 {
-    float4 viewPos = tex2D(s_DepthBuffer, input.UV);
-    float4 fragPos = mul(viewPos * float4(1,-1,1,1), Projection);
+    float centerZBuffer = tex2D(s_DepthBuffer, input.UV).g;
+    float3 centerDepthPos = normalize(input.ViewDirection);
+    float3 viewPos = centerZBuffer * centerDepthPos;
+    //return float4(viewPos, 1);
+
+    float4 fragPos = mul(float4(viewPos,1), Projection);
     fragPos = fragPos / fragPos.w;
     //return float4(0.5 + 0.5 * fragPos.xy, 0, 1);
     //return float4(fragPos.z, -fragPos.z, 0, 1);
     //return float4(1-fragPos.z, 0, 0, 1);
 
-    float3 viewDirection = normalize(input.ViewDirection);
-    float3 randNormal = tex2D(s_RandNormal, input.UV * 200.0f).xyz;
+    //float3 viewDirection = normalize(input.ViewDirection);
+    float3 randNormal = tex2D(s_RandNormal, input.UV * 201.0f).xyz;
     float3 normal = decode(tex2D(s_NormalBuffer, input.UV).xyz);
 
-    float radius = sampleRadius; // / -viewPos.z;
+    float radius = sampleRadius; // max(0, sampleRadius / -centerZBuffer);
     //return float4(radius, radius*10, radius*0.1, 1.0);
 
     float3 tangent = normalize(randNormal - normal * dot(randNormal, normal));
@@ -87,28 +91,39 @@ float4 PS(VSO input) : COLOR0
     float occlusion = 0.0f;
     for (int i = 0; i < NUM_SAMPLES; i++)
     {
-        //float3 dir = reflect(sampleSphere[i], randNormal) * radius;
-        float3 dir = mul(TBN, sampleSphere[i]) * radius;
+        //float3 dir = reflect(sampleSphere[i], randNormal); // *radius;
+        float3 dir = normalize(mul(TBN, sampleSphere[i])) *radius;
+        //return float4(dir, 1.0);
 
         float4 samplePos = float4(viewPos.xyz + dir, 1.0f);
-        float4 offset = mul(samplePos * float4(1, -1, 1, 1), Projection);
+        //return float4(samplePos.xyz, 1.0);
+
+        float4 offset = mul(samplePos, Projection);
         offset = offset / offset.w;
         float2 sampleTexCoord = 0.5 + 0.5 * offset.xy;
         //return float4(sampleTexCoord, 0, 1);
 
-        float4 sampleDepths = tex2D(s_DepthBuffer, sampleTexCoord);
-        sampleDepths /= sampleDepths.w;
-        //return float4(sampleDepths.xy, 0, 1);
-        //return float4(sampleDepths.z, -sampleDepths.z, 0, 1);
+        float3 sampleDir = normalize(samplePos.xyz - viewPos.xyz);
+        float nDotS = max(dot(normal, sampleDir), 0);
+        //return float4(nDotS, 0, 0, 1);
 
-        //float test = (samplePos.z - sampleDepths.z + distanceScale);
-        //return float4(test, -test, 0, 1);
+        float sampleDepth = tex2D(s_DepthBuffer, sampleTexCoord).g;
+        //return float4(sampleDepth, 0, 0, 1);
+        //return float4(sampleDepth, -sampleDepth, 0, 1);
+
+        float test = (viewPos.z - sampleDepth); // +distanceScale);
+        return float4(test, -test, 0, 1);
 
         //float rangeCheck = abs(viewPos.z - sampleDepths.z) < radius ? 1.0 : 0.0;
-        float rangeCheck = smoothstep(0.0, 1.0, radius / abs(viewPos.z - sampleDepths.z));
+        //float rangeCheck = smoothstep(0.0, 1.0, radius / abs(viewPos.z - sampleDepths.z));
         //return float4(samplePos.z-sampleDepths.z, sampleDepths.z - samplePos.z, 0, 1);
 
-        occlusion += (sampleDepths.z >= samplePos.z + bias) ? rangeCheck : 0.0;
+        //occlusion += (sampleDepths.z >= samplePos.z + bias) ? rangeCheck : 0.0;
+
+        float rangeCheck = smoothstep(0.0, 1.0, radius / abs(viewPos.z - sampleDepth));
+        return float4(rangeCheck, 0, 0, 1);
+
+        occlusion += rangeCheck * step(sampleDepth, samplePos.z) * nDotS;
     }
     occlusion = occlusion / NUM_SAMPLES;
 

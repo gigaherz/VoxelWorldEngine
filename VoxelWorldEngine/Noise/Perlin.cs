@@ -8,7 +8,7 @@ namespace VoxelWorldEngine.Noise
 {
     public class Perlin : NoiseOctaves
     {
-        public Perlin(int seed, double scale) : base(seed, scale)
+        public Perlin(int seed, Vector3D scale) : base(seed, scale)
         {
         }
 
@@ -48,7 +48,7 @@ namespace VoxelWorldEngine.Noise
             var g1 = Gradients[index1];
 
             double vx0 = g0.x * fx0 + g0.y * fy0;
-            double vx1 = g1.x * fx1 + g0.x * fy0;
+            double vx1 = g1.x * fx1 + g1.y * fy0;
             double vy0 = vx0 + fx0 * (vx1 - vx0);
 
             var py1 = Perm[jy + 1];

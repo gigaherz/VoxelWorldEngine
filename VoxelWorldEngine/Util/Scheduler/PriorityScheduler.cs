@@ -34,7 +34,7 @@ namespace VoxelWorldEngine.Util.Scheduler
         private readonly AutoResetEvent _awaitTasks = new AutoResetEvent(false);
 
         private Thread[] _threads;
-        public int MaximumConcurrencyLevel { get; set; } = 2 * Math.Max(1, CpuCoreCount);
+        public int MaximumConcurrencyLevel { get; set; } = 2 * Math.Max(1, Environment.ProcessorCount - 1);
         public int QueuedTaskCount => _tasks.Sum(t => t.Count);
 
         EntityPosition _lastPlayerPosition;

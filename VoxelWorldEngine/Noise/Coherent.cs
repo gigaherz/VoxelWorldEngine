@@ -3,13 +3,14 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using VoxelWorldEngine.Maths;
 using VoxelWorldEngine.Util;
 
 namespace VoxelWorldEngine.Noise
 {
     public class Coherent : NoiseOctaves
     {
-        public Coherent(int seed, double scale) : base(seed, scale)
+        public Coherent(int seed, Vector3D scale) : base(seed, scale)
         {
         }
 
@@ -18,11 +19,11 @@ namespace VoxelWorldEngine.Noise
         private const int Z_NOISE_GEN = 6971;
         private const int SHIFT_NOISE_GEN = 8;
 
-        public enum NoiseQuality
+        private static int Align(double v)
         {
-            Fast,
-            Standard,
-            Best
+            int k = (int)v;
+            if (v <= 0.0) k -= 1;
+            return k;
         }
 
         protected override double SingleNoise(double x, double y)
@@ -30,34 +31,27 @@ namespace VoxelWorldEngine.Noise
             // Create a unit-length cube aligned along an integer boundary.  This cube
             // surrounds the input point.
 
-            int x0 = ((x > 0.0) ? (int)x : (int)x - 1);
+            int x0 = Align(x);
             int x1 = x0 + 1;
 
-            int y0 = ((y > 0.0) ? (int)y : (int)y - 1);
+            int y0 = Align(y);
             int y1 = y0 + 1;
 
             // Map the difference between the coordinates of the input value and the
             // coordinates of the cube's outer-lower-left vertex onto an S-curve.
-            double xs, ys;
-            {
-                xs = (x - x0);
-                ys = (y - y0);
-            }
+            double xs = (x - x0);
+            double ys = (y - y0);
 
             // Now calculate the noise values at each vertex of the cube.  To generate
             // the coherent-noise value at the input point, interpolate these eight
             // noise values using the S-curve value as the interpolant (trilinear
             // interpolation.)
-            double n0, n1, ix0, ix1;
-            n0 = Gradient(x, y, x0, y0);
-            n1 = Gradient(x, y, x1, y0);
-            ix0 = MathX.Lerp(n0, n1, xs);
-
-            n0 = Gradient(x, y, x0, y1);
-            n1 = Gradient(x, y, x1, y1);
-            ix1 = MathX.Lerp(n0, n1, xs);
-
-            return MathX.Lerp(ix0, ix1, ys);
+            return MathX.Lerp(
+                Gradient(x, y, x0, y0),
+                Gradient(x, y, x1, y0),
+                Gradient(x, y, x0, y1),
+                Gradient(x, y, x1, y1),
+                xs, ys);
         }
 
         double Gradient(double fx, double fy, int ix, int iy)
@@ -80,7 +74,7 @@ namespace VoxelWorldEngine.Noise
             // Now compute the dot product of the gradient vector with the distance
             // vector.  The resulting value is gradient noise.  Apply a scaling and
             // offset value so that this noise value ranges from 0 to 1.
-            return ((xvGradient * xvPoint) + (yvGradient * yvPoint)) + 0.5;
+            return ((xvGradient * xvPoint) + (yvGradient * yvPoint))*2;
         }
 
         protected override double SingleNoise(double x, double y, double z)
@@ -88,45 +82,35 @@ namespace VoxelWorldEngine.Noise
             // Create a unit-length cube aligned along an integer boundary.  This cube
             // surrounds the input point.
 
-            int x0 = ((x > 0.0) ? (int)x : (int)x - 1);
+            int x0 = Align(x);
             int x1 = x0 + 1;
 
-            int y0 = ((y > 0.0) ? (int)y : (int)y - 1);
+            int y0 = Align(y);
             int y1 = y0 + 1;
 
-            int z0 = ((z > 0.0) ? (int)z : (int)z - 1);
+            int z0 = Align(z);
             int z1 = z0 + 1;
 
             // Map the difference between the coordinates of the input value and the
             // coordinates of the cube's outer-lower-left vertex onto an S-curve.
-            double xs, ys, zs;
-            {
-                xs = (x - x0);
-                ys = (y - y0);
-                zs = (z - z0);
-            }
+            double xs = (x - x0);
+            double ys = (y - y0);
+            double zs = (z - z0);
 
             // Now calculate the noise values at each vertex of the cube.  To generate
             // the coherent-noise value at the input point, interpolate these eight
             // noise values using the S-curve value as the interpolant (trilinear
             // interpolation.)
-            double n0, n1, ix0, ix1, iy0, iy1;
-            n0 = Gradient(x, y, z, x0, y0, z0);
-            n1 = Gradient(x, y, z, x1, y0, z0);
-            ix0 = MathX.Lerp(n0, n1, xs);
-
-            n0 = Gradient(x, y, z, x0, y1, z0);
-            n1 = Gradient(x, y, z, x1, y1, z0);
-            ix1 = MathX.Lerp(n0, n1, xs);
-            iy0 = MathX.Lerp(ix0, ix1, ys);
-            n0 = Gradient(x, y, z, x0, y0, z1);
-            n1 = Gradient(x, y, z, x1, y0, z1);
-            ix0 = MathX.Lerp(n0, n1, xs);
-            n0 = Gradient(x, y, z, x0, y1, z1);
-            n1 = Gradient(x, y, z, x1, y1, z1);
-            ix1 = MathX.Lerp(n0, n1, xs);
-            iy1 = MathX.Lerp(ix0, ix1, ys);
-            return MathX.Lerp(iy0, iy1, zs);
+            return MathX.Lerp(
+                Gradient(x, y, z, x0, y0, z0),
+                Gradient(x, y, z, x1, y0, z0),
+                Gradient(x, y, z, x0, y1, z0),
+                Gradient(x, y, z, x1, y1, z0),
+                Gradient(x, y, z, x0, y0, z1),
+                Gradient(x, y, z, x1, y0, z1),
+                Gradient(x, y, z, x0, y1, z1),
+                Gradient(x, y, z, x1, y1, z1),
+                xs, ys, zs);
         }
 
         double Gradient(double fx, double fy, double fz, int ix, int iy, int iz)
@@ -151,7 +135,7 @@ namespace VoxelWorldEngine.Noise
             // Now compute the dot product of the gradient vector with the distance
             // vector.  The resulting value is gradient noise.  Apply a scaling and
             // offset value so that this noise value ranges from 0 to 1.
-            return ((xvGradient * xvPoint) + (yvGradient * yvPoint) + (zvGradient * zvPoint)) + 0.5;
+            return ((xvGradient * xvPoint) + (yvGradient * yvPoint) + (zvGradient * zvPoint)) * 2;
         }
 
         private static readonly double[] RANDOM_VECTORS = {

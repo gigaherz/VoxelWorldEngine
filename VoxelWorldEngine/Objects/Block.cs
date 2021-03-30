@@ -12,8 +12,9 @@ namespace VoxelWorldEngine.Objects
             Registry.Map();
         }
 
-        // Empty/gas blocks
         public static readonly Block
+
+            // Empty/gas blocks
             Air = new Block("air") { PhysicsMaterial = PhysicsMaterial.Air },
 
             // Liquids

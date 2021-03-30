@@ -37,7 +37,12 @@ namespace VoxelWorldEngine
         {
             base.Update(gameTime);
 
+            var mouseDelta = (Vector2)VoxelGame.Instance.MouseDelta;
+            mouseDelta /= (float)gameTime.ElapsedGameTime.TotalSeconds;
+
             var elapsed = MathHelper.Min(1.0f/20, (float)gameTime.ElapsedGameTime.TotalSeconds);
+
+            mouseDelta *= elapsed;
 
             Vector3 move = Vector3.Zero;
             bool walkingIsPressed = false;
@@ -59,8 +64,6 @@ namespace VoxelWorldEngine
                 if (keyboardState.IsKeyDown(Keys.D)) move.X += 1;
                 if (keyboardState.IsKeyDown(Keys.S)) move.Z -= 1;
                 if (keyboardState.IsKeyDown(Keys.W)) move.Z += 1;
-
-                var mouseDelta = VoxelGame.Instance.MouseDelta;
 
                 PlayerOrientation = PlayerOrientation.RotateYaw(mouseDelta.X * 0.0025f);
                 PlayerOrientation = PlayerOrientation.RotatePitch(mouseDelta.Y * 0.0025f);

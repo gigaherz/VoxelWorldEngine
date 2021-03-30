@@ -217,7 +217,7 @@ namespace VoxelWorldEngine
                 Window.Title = $"FPS: {fps}; Tiles In Progress: {Grid.InProgressTiles}; Pending tiles: {Grid.PendingTiles};" + 
                                $" Queued tasks: {PriorityScheduler.Instance.QueuedTaskCount};" +
                                $" Scheduled tasks: {Grid.UpdateTaskCount};" +
-                               $" Player At: {_playerController.PlayerPosition}; Angles: {_playerController.PlayerOrientation};"+
+                               $" Player At: {_playerController.PlayerPosition.GridPosition}; Angles: {_playerController.PlayerOrientation};"+
                                $" Target: {_playerController.PlayerPositionTarget}" +
                                $" Mouse: {MouseDelta}" +
                                $" Generation Phase: {Grid.saveInitializationPhase}";

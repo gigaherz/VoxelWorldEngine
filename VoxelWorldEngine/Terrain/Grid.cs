@@ -22,8 +22,8 @@ namespace VoxelWorldEngine.Terrain
     public class Grid : GameComponent, IRenderableProvider
     {
         public static int TileInProgressThreshold = 100; //*/ PriorityScheduler.Instance.MaximumConcurrencyLevel * 10;
-        public static int LoadRadius = 360;
-        public static int UnloadRadius = 600;
+        public static int LoadRadius = 120;
+        public static int UnloadRadius = 240;
         public static int SpawnChunksRange = 200 / Tile.GridSize.X;
 
         public struct PendingContext {
@@ -51,7 +51,7 @@ namespace VoxelWorldEngine.Terrain
         public Random Random { get; }
 
         public GenerationContext GenerationContext { get; } = new GenerationContext(
-            new GenerationSettings("SSAO".GetHashCode())
+            new GenerationSettings("COHERENT-fr".GetHashCode())
             //new GenerationSettings((int)(DateTime.UtcNow.Ticks % 2147483647))
             );
 

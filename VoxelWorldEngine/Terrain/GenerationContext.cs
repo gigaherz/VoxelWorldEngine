@@ -14,6 +14,7 @@ namespace VoxelWorldEngine.Terrain
 
         // Temporary.
         public int WorldFloor { get; }
+        public int WorldCeiling { get; }
         public int WaterLevel { get; }
         public int BeachBottom { get; }
         public int BeachTop { get; }
@@ -26,12 +27,13 @@ namespace VoxelWorldEngine.Terrain
         public GenerationContext(GenerationSettings settings)
         {
             Seed = settings.Seed;
-            var PerlinDensity = new Simplex(Seed, ((Vector3D)Tile.VoxelSize) * 0.035);
-            var PerlinHeight = new Simplex(Seed * 31, ((Vector3D)Tile.VoxelSize) * 0.001 /** 0.0005*/);
-            var PerlinRoughness = new Simplex(Seed * 53, ((Vector3D)Tile.VoxelSize) * 0.005);
+            var PerlinDensity = new Coherent(Seed, ((Vector3D)Tile.VoxelSize) * 0.035);
+            var PerlinHeight = new Coherent(Seed * 31, ((Vector3D)Tile.VoxelSize) * 0.001 /** 0.0005*/);
+            var PerlinRoughness = new Coherent(Seed * 53, ((Vector3D)Tile.VoxelSize) * 0.005);
             //var PerlinSharpness = new Simplex(Seed * 71, 1 / 7.0);
             var PerlinOffset = new Simplex(Seed * 113, 1);
             WorldFloor = settings.WorldFloor;
+            WorldCeiling = settings.WorldCeiling;
             WaterLevel = settings.WaterLevel;
             BeachBottom = settings.BeachBottom;
             BeachTop = settings.BeachTop;
@@ -54,7 +56,8 @@ namespace VoxelWorldEngine.Terrain
         public int Seed;
 
         // Temporary.
-        public int WorldFloor = -64;
+        public int WorldCeiling = 383;
+        public int WorldFloor = -383;
 
         // Basic Terrain configuration
         public int HeightAmplitude = 256;
